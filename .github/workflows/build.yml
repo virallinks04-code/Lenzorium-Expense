@@ -62,13 +62,14 @@ jobs:
           path: app/build/reports/tests/
 
       - name: Publish release
-        if: env.HAS_KEY == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Lenzorium Expenses build ${{ github.run_number }}
+          name: Lenzorium Expenses build ${{ github.run_number }}${{ env.HAS_KEY != 'true' && ' (test key)' || '' }}
           body: |
             Installable release APK. Download the .apk below on your Android phone and open it to install.
             All calculation tests passed for this build.
+            ${{ env.HAS_KEY != 'true' && 'This build is signed with a temporary test key. Before switching to a build signed with the permanent key, make a backup in Settings, because the old app must be uninstalled first.' || '' }}
           files: out/*.apk
-          make_latest: true
+          prerelease: ${{ env.HAS_KEY != 'true' }}
+          make_latest: ${{ env.HAS_KEY == 'true' }}
