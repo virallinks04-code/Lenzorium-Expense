@@ -1,0 +1,282 @@
+package com.lenzorium.expenses.data
+
+import android.content.Context
+import androidx.room.withTransaction
+import com.lenzorium.expenses.domain.LedgerMath
+import com.lenzorium.expenses.domain.Money
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.time.LocalDate
+import java.time.ZoneId
+
+sealed class SaveResult {
+    data class Ok(val id: Long) : SaveResult()
+    data class Error(val message: String) : SaveResult()
+}
+
+/** Existing loan entered during first-time setup. */
+data class OpeningLoanInput(
+    val lender: String,
+    val title: String,
+    val amountMinor: Long,
+    val dueEpochDay: Long?,
+    val notes: String,
+)
+
+class Repository(
+    private val context: Context,
+    val db: AppDatabase,
+    val settings: SettingsStore,
+) {
+    private val dao = db.dao()
+
+    val txns = dao.observeTxns()
+    val loans = dao.observeLoans()
+    val categories = dao.observeCategories()
+
+    val receiptsDir: File get() = File(context.filesDir, "receipts").apply { mkdirs() }
+    fun receiptFile(name: String): File = File(receiptsDir, name)
+
+    private fun fmt(minor: Long) = Money.format(minor, settings.current.currency)
+
+    private fun startMillis(): Long =
+        LocalDate.ofEpochDay(settings.current.trackingStartEpochDay).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    private fun endOfTodayMillis(): Long =
+        LocalDate.now().plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    private fun checkDate(ts: Long): String? = when {
+        ts < startMillis() -> "The date is before your tracking start date (${LocalDate.ofEpochDay(settings.current.trackingStartEpochDay)}). Your opening balance already covers that period."
+        ts >= endOfTodayMillis() -> "The date can't be in the future."
+        else -> null
+    }
+
+    suspend fun ensureDefaultCategories() = withContext(Dispatchers.IO) {
+        if (dao.categoryCount() == 0) dao.insertCategories(DefaultCategories.all)
+    }
+
+    suspend fun completeSetup(newSettings: AppSettings, pin: String?, openingLoans: List<OpeningLoanInput>) =
+        withContext(Dispatchers.IO) {
+            val startTs = LocalDate.ofEpochDay(newSettings.trackingStartEpochDay)
+                .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            db.withTransaction {
+                if (dao.categoryCount() == 0) dao.insertCategories(DefaultCategories.all)
+                val now = System.currentTimeMillis()
+                dao.insertLoans(openingLoans.map {
+                    Loan(
+                        lender = it.lender.trim(),
+                        title = it.title.trim(),
+                        principalMinor = it.amountMinor,
+                        receivedAt = startTs,
+                        dueEpochDay = it.dueEpochDay,
+                        notes = it.notes.trim(),
+                        isOpening = true,
+                        requestId = java.util.UUID.randomUUID().toString(),
+                        createdAt = now,
+                    )
+                })
+            }
+            settings.update { newSettings.copy(setupDone = true, pinHash = it.pinHash, pinSalt = it.pinSalt) }
+            if (pin != null) settings.setPin(pin)
+            settings.update { it.copy(biometricEnabled = newSettings.biometricEnabled && pin != null) }
+        }
+
+    /** Saves an expense or income. Inserts when txn.id == 0, otherwise updates. */
+    suspend fun saveEntry(txn: Txn, oldReceiptToDelete: String?): SaveResult = withContext(Dispatchers.IO) {
+        require(txn.type == TxnType.EXPENSE || txn.type == TxnType.INCOME)
+        if (txn.amountMinor <= 0) return@withContext SaveResult.Error("Enter an amount greater than zero.")
+        if (txn.categoryId == null) return@withContext SaveResult.Error("Choose a category.")
+        checkDate(txn.timestamp)?.let { return@withContext SaveResult.Error(it) }
+        try {
+            val id = db.withTransaction {
+                if (txn.id == 0L) {
+                    // A repeated tap re-sends the same requestId: return the record already saved.
+                    dao.txnByRequest(txn.requestId)?.id ?: dao.insertTxn(txn)
+                } else {
+                    dao.updateTxn(txn); txn.id
+                }
+            }
+            oldReceiptToDelete?.let { receiptFile(it).delete() }
+            SaveResult.Ok(id)
+        } catch (e: Exception) {
+            SaveResult.Error("Couldn't save: ${e.message ?: "unknown error"}. Your entry is still here; try again.")
+        }
+    }
+
+    /**
+     * Creates or updates a loan. A new (non-opening) loan also creates its linked
+     * "loan received" transaction in the same database transaction.
+     */
+    suspend fun saveLoan(loan: Loan, receivedVia: PayMethod?): SaveResult = withContext(Dispatchers.IO) {
+        if (loan.lender.isBlank()) return@withContext SaveResult.Error("Enter the lender's name.")
+        if (loan.principalMinor <= 0) return@withContext SaveResult.Error("Enter an amount greater than zero.")
+        if (!loan.isOpening) checkDate(loan.receivedAt)?.let { return@withContext SaveResult.Error(it) }
+        try {
+            db.withTransaction {
+                if (loan.id == 0L) {
+                    dao.loanByRequest(loan.requestId)?.let { return@withTransaction SaveResult.Ok(it.id) }
+                    val id = dao.insertLoan(loan)
+                    if (!loan.isOpening) {
+                        dao.insertTxn(
+                            Txn(
+                                type = TxnType.LOAN_RECEIVED,
+                                amountMinor = loan.principalMinor,
+                                timestamp = loan.receivedAt,
+                                party = loan.lender,
+                                paymentMethod = receivedVia,
+                                notes = loan.title,
+                                loanId = id,
+                                requestId = loan.requestId + "-received",
+                                createdAt = System.currentTimeMillis(),
+                            )
+                        )
+                    }
+                    SaveResult.Ok(id)
+                } else {
+                    val existing = dao.loan(loan.id) ?: return@withTransaction SaveResult.Error("This loan no longer exists.")
+                    val fixed = loan.copy(isOpening = existing.isOpening, requestId = existing.requestId, createdAt = existing.createdAt)
+                    val history = dao.txnsForLoan(loan.id)
+                    LedgerMath.validateLoanTimeline(fixed, history, ::fmt)?.let {
+                        return@withTransaction SaveResult.Error("Can't change the loan this way. $it")
+                    }
+                    dao.updateLoan(fixed)
+                    history.firstOrNull { it.type == TxnType.LOAN_RECEIVED }?.let { r ->
+                        dao.updateTxn(
+                            r.copy(
+                                amountMinor = fixed.principalMinor,
+                                timestamp = fixed.receivedAt,
+                                party = fixed.lender,
+                                paymentMethod = receivedVia ?: r.paymentMethod,
+                                notes = fixed.title,
+                            )
+                        )
+                    }
+                    SaveResult.Ok(loan.id)
+                }
+            }
+        } catch (e: Exception) {
+            SaveResult.Error("Couldn't save: ${e.message ?: "unknown error"}. Your entry is still here; try again.")
+        }
+    }
+
+    /** Saves a repayment or a loan charge, rejecting anything that would over-repay the loan at any point in time. */
+    suspend fun saveLoanEvent(txn: Txn): SaveResult = withContext(Dispatchers.IO) {
+        require(txn.type == TxnType.LOAN_REPAYMENT || txn.type == TxnType.LOAN_CHARGE)
+        if (txn.amountMinor <= 0) return@withContext SaveResult.Error("Enter an amount greater than zero.")
+        val loanId = txn.loanId ?: return@withContext SaveResult.Error("Choose a loan.")
+        checkDate(txn.timestamp)?.let { return@withContext SaveResult.Error(it) }
+        try {
+            db.withTransaction {
+                val loan = dao.loan(loanId) ?: return@withTransaction SaveResult.Error("This loan no longer exists.")
+                if (txn.id == 0L) dao.txnByRequest(txn.requestId)?.let { return@withTransaction SaveResult.Ok(it.id) }
+                val others = dao.txnsForLoan(loanId).filter { it.id != txn.id }
+                val candidate = txn.copy(party = loan.lender)
+                LedgerMath.validateLoanTimeline(loan, others + candidate.copy(id = if (txn.id == 0L) Long.MAX_VALUE else txn.id), ::fmt)
+                    ?.let { return@withTransaction SaveResult.Error(it) }
+                if (txn.id == 0L) SaveResult.Ok(dao.insertTxn(candidate))
+                else { dao.updateTxn(candidate); SaveResult.Ok(txn.id) }
+            }
+        } catch (e: Exception) {
+            SaveResult.Error("Couldn't save: ${e.message ?: "unknown error"}. Your entry is still here; try again.")
+        }
+    }
+
+    /** Deletes a single transaction. The "loan received" entry can only go with its loan. */
+    suspend fun deleteTxn(id: Long): SaveResult = withContext(Dispatchers.IO) {
+        try {
+            db.withTransaction {
+                val t = dao.txn(id) ?: return@withTransaction SaveResult.Ok(id)
+                if (t.type == TxnType.LOAN_RECEIVED) {
+                    return@withTransaction SaveResult.Error("This entry is the money received for a loan. To remove it, delete the loan from the Loans screen, which also removes its repayments.")
+                }
+                if (t.type == TxnType.LOAN_CHARGE && t.loanId != null) {
+                    val loan = dao.loan(t.loanId)
+                    if (loan != null) {
+                        val rest = dao.txnsForLoan(t.loanId).filter { it.id != id }
+                        LedgerMath.validateLoanTimeline(loan, rest, ::fmt)?.let {
+                            return@withTransaction SaveResult.Error("Can't delete this charge: later repayments depend on it. $it")
+                        }
+                    }
+                }
+                dao.deleteTxn(t)
+                t.receiptFile?.let { receiptFile(it).delete() }
+                SaveResult.Ok(id)
+            }
+        } catch (e: Exception) {
+            SaveResult.Error("Couldn't delete: ${e.message ?: "unknown error"}")
+        }
+    }
+
+    /** Deletes a loan together with its full linked history, atomically. */
+    suspend fun deleteLoan(id: Long): SaveResult = withContext(Dispatchers.IO) {
+        try {
+            db.withTransaction {
+                val loan = dao.loan(id) ?: return@withTransaction SaveResult.Ok(id)
+                dao.deleteTxnsForLoan(id)
+                dao.deleteLoan(loan)
+                SaveResult.Ok(id)
+            }
+        } catch (e: Exception) {
+            SaveResult.Error("Couldn't delete: ${e.message ?: "unknown error"}")
+        }
+    }
+
+    suspend fun txn(id: Long): Txn? = withContext(Dispatchers.IO) { dao.txn(id) }
+    suspend fun loan(id: Long): Loan? = withContext(Dispatchers.IO) { dao.loan(id) }
+
+    // Categories
+    suspend fun addCategory(name: String, kind: CategoryKind, iconKey: String, color: Long): SaveResult = withContext(Dispatchers.IO) {
+        val n = name.trim()
+        if (n.isEmpty()) return@withContext SaveResult.Error("Enter a name.")
+        val existing = dao.allCategories()
+        if (existing.any { it.kind == kind && it.name.equals(n, ignoreCase = true) }) return@withContext SaveResult.Error("A category with this name already exists.")
+        SaveResult.Ok(dao.insertCategory(Category(name = n, kind = kind, iconKey = iconKey, colorArgb = color, sortOrder = 100)))
+    }
+
+    suspend fun updateCategory(c: Category): SaveResult = withContext(Dispatchers.IO) {
+        if (c.name.isBlank()) return@withContext SaveResult.Error("Enter a name.")
+        val clash = dao.allCategories().any { it.id != c.id && it.kind == c.kind && it.name.equals(c.name.trim(), ignoreCase = true) }
+        if (clash) return@withContext SaveResult.Error("A category with this name already exists.")
+        dao.updateCategory(c.copy(name = c.name.trim())); SaveResult.Ok(c.id)
+    }
+
+    /** Deletes a category and moves its transactions into that kind's "Other" category. */
+    suspend fun deleteCategory(c: Category): SaveResult = withContext(Dispatchers.IO) {
+        if (c.isFallback) return@withContext SaveResult.Error("This category is the fallback for its type and can't be deleted.")
+        db.withTransaction {
+            val fallback = dao.allCategories().firstOrNull { it.kind == c.kind && it.isFallback }
+                ?: return@withTransaction SaveResult.Error("No fallback category found.")
+            dao.moveCategory(c.id, fallback.id)
+            dao.deleteCategory(c)
+            SaveResult.Ok(c.id)
+        }
+    }
+
+    /** Changing the tracking start is only allowed if no entries are dated before it. */
+    suspend fun canMoveTrackingStart(newStartEpochDay: Long): Boolean = withContext(Dispatchers.IO) {
+        val ms = LocalDate.ofEpochDay(newStartEpochDay).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        dao.allTxns().none { it.timestamp < ms }
+    }
+}
+
+object DefaultCategories {
+    // ARGB colours as Long to keep Room/backup simple.
+    val all: List<Category> = listOf(
+        Category(name = "Food", kind = CategoryKind.EXPENSE, iconKey = "food", colorArgb = 0xFFE4572EL, sortOrder = 1),
+        Category(name = "Groceries", kind = CategoryKind.EXPENSE, iconKey = "groceries", colorArgb = 0xFF2E9E5BL, sortOrder = 2),
+        Category(name = "Transport", kind = CategoryKind.EXPENSE, iconKey = "transport", colorArgb = 0xFF2D7DD2L, sortOrder = 3),
+        Category(name = "Shopping", kind = CategoryKind.EXPENSE, iconKey = "shopping", colorArgb = 0xFFD64FA1L, sortOrder = 4),
+        Category(name = "Bills", kind = CategoryKind.EXPENSE, iconKey = "bills", colorArgb = 0xFFF2A007L, sortOrder = 5),
+        Category(name = "Rent", kind = CategoryKind.EXPENSE, iconKey = "rent", colorArgb = 0xFF7353BAL, sortOrder = 6),
+        Category(name = "Health", kind = CategoryKind.EXPENSE, iconKey = "health", colorArgb = 0xFFD7263DL, sortOrder = 7),
+        Category(name = "Education", kind = CategoryKind.EXPENSE, iconKey = "education", colorArgb = 0xFF1B998BL, sortOrder = 8),
+        Category(name = "Entertainment", kind = CategoryKind.EXPENSE, iconKey = "entertainment", colorArgb = 0xFFFF7F11L, sortOrder = 9),
+        Category(name = "Other", kind = CategoryKind.EXPENSE, iconKey = "other", colorArgb = 0xFF6C757DL, isFallback = true, sortOrder = 99),
+        Category(name = "Salary", kind = CategoryKind.INCOME, iconKey = "salary", colorArgb = 0xFF0B6E4FL, sortOrder = 1),
+        Category(name = "Business", kind = CategoryKind.INCOME, iconKey = "business", colorArgb = 0xFF2D7DD2L, sortOrder = 2),
+        Category(name = "Freelance", kind = CategoryKind.INCOME, iconKey = "freelance", colorArgb = 0xFF7353BAL, sortOrder = 3),
+        Category(name = "Gift", kind = CategoryKind.INCOME, iconKey = "gift", colorArgb = 0xFFD64FA1L, sortOrder = 4),
+        Category(name = "Other Income", kind = CategoryKind.INCOME, iconKey = "other_income", colorArgb = 0xFF6C757DL, isFallback = true, sortOrder = 99),
+    )
+}

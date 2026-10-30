@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Wallet with an upward stroke: original Lenzorium mark -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M34,38h40a6,6 0 0 1 6,6v26a6,6 0 0 1 -6,6h-40a6,6 0 0 1 -6,-6v-26a6,6 0 0 1 6,-6z" />
+    <path
+        android:fillColor="#FF0B6E4F"
+        android:pathData="M64,50h16v14h-16a7,7 0 0 1 0,-14z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M66,57m-3,0a3,3 0 1 1 6,0a3,3 0 1 1 -6,0" />
+    <path
+        android:fillColor="#FFB7F0D8"
+        android:pathData="M36,34l26,-8a3,3 0 0 1 3.7,2.1l1.6,5.9h-31.3z" />
+</vector>

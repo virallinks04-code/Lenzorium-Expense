@@ -1,0 +1,74 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HAS_KEY: ${{ secrets.LENZORIUM_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The release key lives only in encrypted repository secrets, never in the code.
+      - name: Restore signing key
+        if: env.HAS_KEY == 'true'
+        run: |
+          echo "${{ secrets.LENZORIUM_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "LENZORIUM_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          echo "LENZORIUM_KEY_ALIAS=lenzorium" >> "$GITHUB_ENV"
+
+      - name: Run calculation tests
+        run: ./gradlew --no-daemon testReleaseUnitTest
+
+      - name: Build release APK
+        env:
+          LENZORIUM_KEYSTORE_PASSWORD: ${{ secrets.LENZORIUM_KEYSTORE_PASSWORD }}
+          LENZORIUM_KEY_PASSWORD: ${{ secrets.LENZORIUM_KEYSTORE_PASSWORD }}
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Collect APK
+        run: |
+          mkdir -p out
+          SUFFIX=$([ "$HAS_KEY" = "true" ] && echo "" || echo "-TEST-unsigned-key")
+          cp app/build/outputs/apk/release/app-release.apk "out/LenzoriumExpenses-v1.0.0-build${{ github.run_number }}${SUFFIX}.apk"
+          ls -la out
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LenzoriumExpenses-apk
+          path: out/*.apk
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: app/build/reports/tests/
+
+      - name: Publish release
+        if: env.HAS_KEY == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Lenzorium Expenses build ${{ github.run_number }}
+          body: |
+            Installable release APK. Download the .apk below on your Android phone and open it to install.
+            All calculation tests passed for this build.
+          files: out/*.apk
+          make_latest: true
