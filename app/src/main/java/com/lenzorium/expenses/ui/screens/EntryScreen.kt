@@ -253,12 +253,14 @@ fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Lon
                 CategoryGrid(cats, vm.categoryId, { vm.categoryId = it }, onAddCustom = { addCat = true })
             }
             FormSection {
-                TextInput(vm.party, { vm.party = it }, if (isExpense) "Merchant or place" else "Source", placeholder = if (isExpense) "e.g. Imtiaz, petrol pump, pharmacy" else "e.g. employer or client")
                 AccountSelector(
                     state.activeAccounts + listOfNotNull(vm.accountId?.let { id -> state.accountById[id]?.takeIf { it.archived } }),
                     vm.accountId, { vm.accountId = it }, state.accountBalances, c,
                     label = if (isExpense) "Paid from" else "Received into",
                 )
+            }
+            FormSection {
+                TextInput(vm.party, { vm.party = it }, if (isExpense) "Merchant or place" else "Source", placeholder = if (isExpense) "e.g. Imtiaz, petrol pump, pharmacy" else "e.g. employer or client")
                 DateTimeField(vm.timestamp, { vm.timestamp = it }, minDate = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay), showTime = true, label = "Date and time")
                 TextInput(vm.notes, { vm.notes = it }, "Notes", singleLine = false)
             }

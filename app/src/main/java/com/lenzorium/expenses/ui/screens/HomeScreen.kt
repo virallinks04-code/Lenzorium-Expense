@@ -7,6 +7,7 @@ import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.SwapHoriz
 import com.lenzorium.expenses.ui.components.accountIcon
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Visibility
@@ -147,15 +148,18 @@ fun HomeScreen(state: LedgerState, nav: NavController, onDismissAccountsNotice: 
                         Text("Your balance is negative", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFD180))
                     }
                     Spacer(Modifier.height(14.dp))
-                    // Where the money is: one pill per account (Cash, Bank, ...)
-                    Row(
-                        Modifier.padding(end = 12.dp).horizontalScroll(rememberScrollState()),
+                    // Where the money is: one tile per account (Cash, Bank, ...), two per row
+                    FlowRow(
+                        Modifier.padding(end = 12.dp).fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        maxItemsInEachRow = 2,
                     ) {
                         state.activeAccounts.forEach { a ->
                             val bal = state.balanceOf(a.id)
                             Row(
                                 Modifier
+                                    .weight(1f)
                                     .clip(MaterialTheme.shapes.medium)
                                     .background(Color.White.copy(alpha = 0.14f))
                                     .clickable { nav.navigate(Routes.account(a.id)) }
@@ -171,6 +175,7 @@ fun HomeScreen(state: LedgerState, nav: NavController, onDismissAccountsNotice: 
                                         style = MaterialTheme.typography.titleSmall,
                                         color = if (bal < 0 && !hide) Color(0xFFFFD180) else m.onHero,
                                         maxLines = 1,
+                                        softWrap = false,
                                     )
                                 }
                             }
