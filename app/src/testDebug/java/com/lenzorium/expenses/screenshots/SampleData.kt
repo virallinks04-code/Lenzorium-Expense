@@ -62,6 +62,7 @@ object SampleData {
         currencyCode = "PKR",
         openingBalanceMinor = 85_000_00,
         trackingStartEpochDay = today.minusDays(60).toEpochDay(),
+        lastBackupAt = System.currentTimeMillis() - 2L * 24 * 60 * 60 * 1000,
     )
 
     val state = LedgerState(loaded = true, settings = settings, txns = txns, loans = loans, categories = categories)
