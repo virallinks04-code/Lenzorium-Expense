@@ -4,6 +4,17 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.ripple
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Surface
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.size
@@ -200,31 +211,7 @@ internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String 
         },
         bottomBar = {
             if (showBar) {
-                NavigationBar {
-                    tabs.forEach { t ->
-                        NavigationBarItem(
-                            selected = route == t.route,
-                            onClick = { if (t.route == "add") addSheet = true else nav.goTab(t.route) },
-                            icon = {
-                                if (t.route == "add") {
-                                    Box(
-                                        Modifier.size(width = 52.dp, height = 36.dp)
-                                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp)),
-                                        contentAlignment = Alignment.Center,
-                                    ) { Icon(Icons.Rounded.Add, "Add", tint = MaterialTheme.colorScheme.onPrimary) }
-                                } else {
-                                    Icon(t.icon, null)
-                                }
-                            },
-                            label = {
-                                Text(
-                                    t.label, maxLines = 1, softWrap = false,
-                                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp, letterSpacing = 0.sp),
-                                )
-                            },
-                        )
-                    }
-                }
+                AppTabBar(route) { r -> if (r == "add") addSheet = true else nav.goTab(r) }
             }
         },
     ) { padding ->
@@ -287,6 +274,68 @@ internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String 
                 AddOption(Icons.Rounded.TrendingUp, m.income, "Add Income", "Salary, business, gifts and more") { addSheet = false; nav.navigate(Routes.entry(TxnType.INCOME)) }
                 AddOption(Icons.Rounded.AccountBalance, m.loan, "Take Loan", "Money you borrowed — adds to balance and debt") { addSheet = false; nav.navigate(Routes.loanForm()) }
                 AddOption(Icons.Rounded.Payments, m.loan, "Repay Loan", "Pay back part or all of a loan") { addSheet = false; nav.navigate(Routes.repay()) }
+            }
+        }
+    }
+}
+
+/** Bottom tab bar with full-width labels and a prominent Add button in the middle. */
+@Composable
+private fun AppTabBar(current: String?, onSelect: (String) -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.navigationBarsPadding()) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            Row(Modifier.fillMaxWidth().height(68.dp), verticalAlignment = Alignment.CenterVertically) {
+                tabs.forEach { t ->
+                    val selected = current == t.route
+                    val isAdd = t.route == "add"
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = ripple(bounded = false, radius = 36.dp),
+                            ) { onSelect(t.route) }
+                            .semantics { role = Role.Tab },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Box(
+                            Modifier
+                                .size(width = if (isAdd) 52.dp else 56.dp, height = 32.dp)
+                                .background(
+                                    when {
+                                        isAdd -> MaterialTheme.colorScheme.primary
+                                        selected -> MaterialTheme.colorScheme.secondaryContainer
+                                        else -> Color.Transparent
+                                    },
+                                    RoundedCornerShape(16.dp),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                if (isAdd) Icons.Rounded.Add else t.icon,
+                                contentDescription = null,
+                                tint = when {
+                                    isAdd -> MaterialTheme.colorScheme.onPrimary
+                                    selected -> MaterialTheme.colorScheme.onSecondaryContainer
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            t.label,
+                            maxLines = 1,
+                            softWrap = false,
+                            style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp, letterSpacing = (-0.2).sp),
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
     }
