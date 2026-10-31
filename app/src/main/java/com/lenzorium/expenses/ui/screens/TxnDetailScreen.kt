@@ -89,11 +89,23 @@ fun TxnDetailScreen(state: LedgerState, repo: Repository, id: Long, nav: NavCont
                     when (t.type) {
                         TxnType.EXPENSE -> Field("Merchant or place", t.party.ifBlank { "—" })
                         TxnType.INCOME -> Field("Source", t.party.ifBlank { "—" })
+                        TxnType.TRANSFER -> Unit
                         else -> Field("Lender", t.party)
                     }
-                    t.paymentMethod?.let { Field("Payment method", it.label) }
-                    if (t.type == TxnType.LOAN_CHARGE) Field("Effect", "Adds to the loan's debt. Available balance is not changed.")
-                    else Field("Effect on available balance", Money.formatSigned(LedgerMath.cashDelta(t), c))
+                    when (t.type) {
+                        TxnType.TRANSFER -> {
+                            Field("From", state.accountName(t.accountId) ?: "—")
+                            Field("To", state.accountName(t.toAccountId) ?: "—")
+                        }
+                        TxnType.EXPENSE, TxnType.LOAN_REPAYMENT -> Field("Paid from", state.accountName(t.accountId) ?: t.paymentMethod?.label ?: "—")
+                        TxnType.INCOME, TxnType.LOAN_RECEIVED -> Field("Received into", state.accountName(t.accountId) ?: t.paymentMethod?.label ?: "—")
+                        TxnType.LOAN_CHARGE -> Unit
+                    }
+                    when (t.type) {
+                        TxnType.LOAN_CHARGE -> Field("Effect", "Adds to the loan's debt. Available balance is not changed.")
+                        TxnType.TRANSFER -> Field("Effect", "Moves money between your accounts. Your total balance doesn't change.")
+                        else -> Field("Effect on available balance", Money.formatSigned(LedgerMath.cashDelta(t), c))
+                    }
                     if (t.notes.isNotBlank()) Field("Notes", t.notes)
                 }
             }

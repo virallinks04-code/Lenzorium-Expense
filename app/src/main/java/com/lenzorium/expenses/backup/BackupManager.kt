@@ -26,6 +26,7 @@ class BackupManager(private val context: Context, private val repo: Repository) 
                 loans = dao.allLoans(),
                 txns = dao.allTxns(),
                 createdAt = System.currentTimeMillis(),
+                accounts = dao.allAccounts(),
             )
             val json = BackupCodec.encode(data)
             val out = context.contentResolver.openOutputStream(uri, "wt") ?: error("Couldn't open the file for writing.")
@@ -83,6 +84,8 @@ class BackupManager(private val context: Context, private val repo: Repository) 
                 dao.clearTxns()
                 dao.clearLoans()
                 dao.clearCategories()
+                dao.clearAccounts()
+                dao.insertAccounts(data.accounts)
                 dao.insertCategories(data.categories)
                 dao.insertLoans(data.loans)
                 dao.insertTxns(data.txns)

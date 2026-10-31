@@ -10,6 +10,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.Update
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -74,19 +76,64 @@ interface LedgerDao {
     @Update suspend fun updateCategory(c: Category)
     @Delete suspend fun deleteCategory(c: Category)
 
+    // Accounts
+    @Query("SELECT * FROM accounts ORDER BY archived, sortOrder, id")
+    fun observeAccounts(): Flow<List<Account>>
+
+    @Query("SELECT * FROM accounts ORDER BY archived, sortOrder, id")
+    suspend fun allAccounts(): List<Account>
+
+    @Query("SELECT * FROM accounts WHERE id = :id")
+    suspend fun account(id: Long): Account?
+
+    @Query("SELECT COUNT(*) FROM transactions WHERE accountId = :id OR toAccountId = :id")
+    suspend fun accountUseCount(id: Long): Int
+
+    @Insert suspend fun insertAccount(a: Account): Long
+    @Insert suspend fun insertAccounts(a: List<Account>)
+    @Update suspend fun updateAccount(a: Account)
+    @Delete suspend fun deleteAccount(a: Account)
+
     // Restore helpers
+    @Query("DELETE FROM accounts") suspend fun clearAccounts()
     @Query("DELETE FROM transactions") suspend fun clearTxns()
     @Query("DELETE FROM loans") suspend fun clearLoans()
     @Query("DELETE FROM categories") suspend fun clearCategories()
 }
 
-@Database(entities = [Txn::class, Loan::class, Category::class], version = 1, exportSchema = true)
+@Database(entities = [Txn::class, Loan::class, Category::class, Account::class], version = 2, exportSchema = true)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): LedgerDao
 
     companion object {
+        const val CASH_ID = 1L
+        const val BANK_ID = 2L
+
+        /**
+         * Version 2 adds accounts (Cash, Bank, ...) with their own balances.
+         * Existing entries are assigned from their old payment label: Cash → Cash, Bank/Card → Bank.
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `accounts` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, " +
+                        "`kind` TEXT NOT NULL, `openingMinor` INTEGER NOT NULL, `archived` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL)"
+                )
+                db.execSQL("INSERT INTO `accounts` (`id`,`name`,`kind`,`openingMinor`,`archived`,`sortOrder`) VALUES ($CASH_ID,'Cash','CASH',0,0,1), ($BANK_ID,'Bank','BANK',0,0,2)")
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `accountId` INTEGER")
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `toAccountId` INTEGER")
+                db.execSQL(
+                    "UPDATE `transactions` SET `accountId` = CASE " +
+                        "WHEN `type` = 'LOAN_CHARGE' THEN NULL " +
+                        "WHEN `paymentMethod` IN ('BANK','CARD') THEN $BANK_ID ELSE $CASH_ID END"
+                )
+            }
+        }
+
         fun create(context: Context): AppDatabase =
-            Room.databaseBuilder(context, AppDatabase::class.java, "lenzorium.db").build()
+            Room.databaseBuilder(context, AppDatabase::class.java, "lenzorium.db")
+                .addMigrations(MIGRATION_1_2)
+                .build()
     }
 }

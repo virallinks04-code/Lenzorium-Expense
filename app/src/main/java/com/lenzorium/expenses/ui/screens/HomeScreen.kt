@@ -1,6 +1,11 @@
 package com.lenzorium.expenses.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.rounded.AccountBalanceWallet
+import androidx.compose.material.icons.rounded.SwapHoriz
+import com.lenzorium.expenses.ui.components.accountIcon
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.CloudUpload
@@ -71,7 +76,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 @Composable
-fun HomeScreen(state: LedgerState, nav: NavController, onToggleHide: () -> Unit = {}) {
+fun HomeScreen(state: LedgerState, nav: NavController, onDismissAccountsNotice: () -> Unit = {}, onToggleHide: () -> Unit = {}) {
     val c = state.currency
     val m = LocalMoneyColors.current
     val today = LocalDate.now()
@@ -141,7 +146,37 @@ fun HomeScreen(state: LedgerState, nav: NavController, onToggleHide: () -> Unit 
                     if (state.available < 0 && !hide) {
                         Text("Your balance is negative", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFD180))
                     }
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(14.dp))
+                    // Where the money is: one pill per account (Cash, Bank, ...)
+                    Row(
+                        Modifier.padding(end = 12.dp).horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        state.activeAccounts.forEach { a ->
+                            val bal = state.balanceOf(a.id)
+                            Row(
+                                Modifier
+                                    .clip(MaterialTheme.shapes.medium)
+                                    .background(Color.White.copy(alpha = 0.14f))
+                                    .clickable { nav.navigate(Routes.account(a.id)) }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(accountIcon(a.kind), null, tint = m.onHero, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Column {
+                                    Text(a.name, style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f), maxLines = 1)
+                                    Text(
+                                        if (hide) "••••" else Money.format(bal, c),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = if (bal < 0 && !hide) Color(0xFFFFD180) else m.onHero,
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
                     Row(
                         Modifier
                             .padding(end = 12.dp)
@@ -158,6 +193,29 @@ fun HomeScreen(state: LedgerState, nav: NavController, onToggleHide: () -> Unit 
                                 Text("After clearing debt", style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f))
                                 Text(shown(state.afterDebt), style = MaterialTheme.typography.titleSmall, color = m.onHero, maxLines = 1)
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (state.settings.accountsNotice) {
+            item {
+                SectionCard {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconBadge(Icons.Rounded.AccountBalanceWallet, MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(12.dp))
+                            Text("New: Cash and Bank balances", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Your entries were sorted by how you paid (card payments count as Bank), and your starting balance was put in Cash. Check the split once in Accounts.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = onDismissAccountsNotice) { Text("Dismiss") }
+                            TextButton(onClick = { onDismissAccountsNotice(); nav.navigate(Routes.ACCOUNTS) }) { Text("Review accounts") }
                         }
                     }
                 }
@@ -202,7 +260,7 @@ fun HomeScreen(state: LedgerState, nav: NavController, onToggleHide: () -> Unit 
                 QuickAction(Icons.Rounded.TrendingUp, m.income, "Income") { nav.navigate(Routes.entry(TxnType.INCOME)) }
                 QuickAction(Icons.Rounded.AccountBalance, m.loan, "Take loan") { nav.navigate(Routes.loanForm()) }
                 QuickAction(Icons.Rounded.Payments, m.loan, "Repay") { nav.navigate(Routes.repay()) }
-                QuickAction(Icons.AutoMirrored.Rounded.ReceiptLong, MaterialTheme.colorScheme.primary, "History") { nav.goTab(Routes.TXNS) }
+                QuickAction(Icons.Rounded.SwapHoriz, MaterialTheme.colorScheme.primary, "Transfer") { nav.navigate(Routes.transfer()) }
             }
         }
 
@@ -293,7 +351,7 @@ fun HomeScreen(state: LedgerState, nav: NavController, onToggleHide: () -> Unit 
                 SectionCard {
                     Column(Modifier.padding(vertical = 4.dp)) {
                         recent.forEach { t ->
-                            TxnRow(t, t.categoryId?.let { state.categoryById[it] }, c, onClick = { nav.navigate(Routes.txn(t.id)) }, showDate = true)
+                            TxnRow(t, t.categoryId?.let { state.categoryById[it] }, c, onClick = { nav.navigate(Routes.txn(t.id)) }, showDate = true, account = state.accountLabel(t))
                         }
                     }
                 }

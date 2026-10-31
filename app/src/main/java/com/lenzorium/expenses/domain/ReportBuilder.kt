@@ -78,7 +78,15 @@ data class ReportData(
     val trendUnit: String,
     val lenders: List<LenderDebt>,
     val txns: List<Txn>,
-)
+    /** Each account's balance at the end of the period. */
+    val accountClosing: List<Pair<String, Long>> = emptyList(),
+    val accountNames: Map<Long, String> = emptyMap(),
+) {
+    /** "Cash", or "Bank → Cash" for a transfer. */
+    fun accountLabel(t: Txn): String =
+        if (t.type == TxnType.TRANSFER) "${accountNames[t.accountId] ?: "?"} → ${accountNames[t.toAccountId] ?: "?"}"
+        else t.accountId?.let { accountNames[it] } ?: t.paymentMethod?.label ?: ""
+}
 
 object ReportBuilder {
     fun build(
@@ -89,6 +97,7 @@ object ReportBuilder {
         categories: List<Category>,
         zone: ZoneId = ZoneId.systemDefault(),
         today: LocalDate = LocalDate.now(zone),
+        accounts: List<com.lenzorium.expenses.data.Account> = emptyList(),
     ): ReportData {
         val start = period.start.atStartOfDay(zone).toInstant().toEpochMilli()
         val end = period.endInclusive.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
@@ -156,6 +165,11 @@ object ReportBuilder {
             trendUnit = unit,
             lenders = lenders,
             txns = inPeriod,
+            accountClosing = accounts
+                .map { it.name to LedgerMath.accountBalance(it, txns, end) to it.archived }
+                .filter { (pair, archived) -> !archived || pair.second != 0L }
+                .map { it.first },
+            accountNames = accounts.associate { it.id to it.name },
         )
     }
 }

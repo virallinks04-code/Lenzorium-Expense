@@ -1,5 +1,7 @@
 package com.lenzorium.expenses.screenshots
 
+import com.lenzorium.expenses.data.Account
+import com.lenzorium.expenses.data.AccountKind
 import com.lenzorium.expenses.data.AppSettings
 import com.lenzorium.expenses.data.DefaultCategories
 import com.lenzorium.expenses.data.Loan
@@ -27,10 +29,21 @@ object SampleData {
     private fun cat(name: String) = categories.first { it.name == name }.id
 
     private var id = 0L
+    val accounts = listOf(
+        Account(1, "Cash", AccountKind.CASH, 15_000_00, false, 1),
+        Account(2, "Bank", AccountKind.BANK, 70_000_00, false, 2),
+        Account(3, "JazzCash", AccountKind.WALLET, 0, false, 3),
+    )
+
     private fun t(type: TxnType, amount: Long, category: String?, ts: Long, party: String, method: PayMethod? = PayMethod.CARD, loanId: Long? = null, notes: String = "") =
         Txn(
             id = ++id, type = type, amountMinor = amount * 100, categoryId = category?.let { cat(it) }, timestamp = ts,
-            party = party, paymentMethod = method, notes = notes, loanId = loanId, requestId = "s$id", createdAt = 0,
+            party = party, notes = notes, loanId = loanId, requestId = "s$id", createdAt = 0,
+            accountId = when {
+                type == TxnType.LOAN_CHARGE -> null
+                method == PayMethod.CASH -> 1L
+                else -> 2L
+            },
         )
 
     val loans = listOf(
@@ -48,6 +61,8 @@ object SampleData {
         t(TxnType.EXPENSE, 3_999, "Shopping", at(3, 16, 15), "Outfitters"),
         t(TxnType.EXPENSE, 1_800, "Entertainment", at(3, 21, 0), "Cinepax"),
         t(TxnType.LOAN_REPAYMENT, 10_000, null, at(5, 10, 0), "Ali Raza", PayMethod.BANK, loanId = 1),
+        Txn(id = 100, type = TxnType.TRANSFER, amountMinor = 10_000_00, timestamp = at(4, 18, 30), notes = "ATM withdrawal", requestId = "s100", createdAt = 0, accountId = 2, toAccountId = 1),
+        Txn(id = 101, type = TxnType.TRANSFER, amountMinor = 3_000_00, timestamp = at(9, 12, 0), notes = "Top-up", requestId = "s101", createdAt = 0, accountId = 2, toAccountId = 3),
         t(TxnType.EXPENSE, 2_350, "Health", at(6, 12, 20), "Dawaai"),
         t(TxnType.EXPENSE, 5_000, "Education", at(8, 20, 0), "Coursera"),
         t(TxnType.INCOME, 22_500, "Freelance", at(10, 15, 0), "Upwork", PayMethod.BANK),
@@ -65,6 +80,6 @@ object SampleData {
         lastBackupAt = System.currentTimeMillis() - 2L * 24 * 60 * 60 * 1000,
     )
 
-    val state = LedgerState(loaded = true, settings = settings, txns = txns, loans = loans, categories = categories)
-    val empty = LedgerState(loaded = true, settings = settings, txns = emptyList(), loans = emptyList(), categories = categories)
+    val state = LedgerState(loaded = true, settings = settings, txns = txns, loans = loans, categories = categories, accounts = accounts)
+    val empty = LedgerState(loaded = true, settings = settings, txns = emptyList(), loans = emptyList(), categories = categories, accounts = accounts.take(2).map { it.copy(openingMinor = if (it.id == 1L) 15_000_00 else 70_000_00) })
 }

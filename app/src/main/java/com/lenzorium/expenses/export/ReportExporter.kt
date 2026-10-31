@@ -30,6 +30,7 @@ object ReportExporter {
 
     private fun describe(t: com.lenzorium.expenses.data.Txn, cats: Map<Long, Category>, loans: Map<Long, Loan>): String = when (t.type) {
         TxnType.EXPENSE, TxnType.INCOME -> t.party.ifBlank { t.categoryId?.let { cats[it]?.name } ?: "" }
+        TxnType.TRANSFER -> t.notes.ifBlank { "Transfer" }
         else -> {
             val l = t.loanId?.let { loans[it] }
             listOfNotNull(l?.lender ?: t.party, l?.title?.ifBlank { null }).joinToString(" · ")
@@ -61,6 +62,7 @@ object ReportExporter {
         row("Closing available balance", n(r.closingBalance))
         row("Outstanding debt as of period end", n(r.debtAtEnd))
         row("Outstanding debt now (current)", n(r.debtNow))
+        r.accountClosing.forEach { (name, v) -> row("Closing balance: $name", n(v)) }
         row()
         row("Expenses by category", "Amount")
         r.expenseByCategory.forEach { row(it.name, n(it.amount)) }
@@ -71,14 +73,14 @@ object ReportExporter {
         row("Lender", "Outstanding as of period end", "Outstanding now (current)")
         r.lenders.forEach { row(it.lender, n(it.atPeriodEnd), n(it.current)) }
         row()
-        row("Date", "Time", "Type", "Category", "Description", "Payment method", "Amount", "Effect on available balance", "Notes")
+        row("Date", "Time", "Type", "Category", "Description", "Account", "Amount", "Effect on available balance", "Notes")
         r.txns.forEach { t ->
             val d = ldt(t.timestamp)
             row(
                 d.format(dateFmt), d.format(timeFmt), t.type.label,
                 t.categoryId?.let { cats[it]?.name } ?: "",
                 describe(t, cats, loanMap),
-                t.paymentMethod?.label ?: "",
+                r.accountLabel(t),
                 n(t.amountMinor),
                 n(LedgerMath.cashDelta(t)),
                 t.notes,
@@ -169,6 +171,7 @@ object ReportExporter {
             line("Total expenses", f(r.totals.expenses))
             line("Net (income − expenses)", Money.formatSigned(r.totals.income - r.totals.expenses, c), bold)
             line("Closing available balance", f(r.closingBalance), bold)
+            r.accountClosing.forEach { (name, v) -> line("   $name", f(v)) }
 
             heading("Borrowing (kept separate from income and expenses)")
             line("Money borrowed in period", f(r.totals.borrowed))
@@ -220,7 +223,7 @@ object ReportExporter {
                 val desc = describe(t, cats, loanMap)
                 val cat = t.categoryId?.let { cats[it]?.name }
                 val left = d.format(DateTimeFormatter.ofPattern("dd MMM HH:mm")) + "  " + t.type.label + " · " +
-                    listOfNotNull(desc.ifBlank { null }, cat?.takeIf { it != desc }, t.paymentMethod?.label).joinToString(" · ")
+                    listOfNotNull(desc.ifBlank { null }, cat?.takeIf { it != desc }, r.accountLabel(t).ifBlank { null }).joinToString(" · ")
                 val right = if (t.type == TxnType.LOAN_CHARGE) "debt +" + Money.number(t.amountMinor, c.decimals) else Money.formatSigned(LedgerMath.cashDelta(t), c)
                 line(left, right)
             }

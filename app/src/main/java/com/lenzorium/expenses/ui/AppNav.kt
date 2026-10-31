@@ -85,7 +85,11 @@ import com.lenzorium.expenses.data.TxnType
 import com.lenzorium.expenses.ui.components.ConfirmDialog
 import com.lenzorium.expenses.ui.components.IconBadge
 import com.lenzorium.expenses.ui.components.MessageDialog
+import com.lenzorium.expenses.ui.screens.AccountDetailScreen
+import com.lenzorium.expenses.ui.screens.AccountsScreen
 import com.lenzorium.expenses.ui.screens.CategoriesScreen
+import com.lenzorium.expenses.ui.screens.TransferScreen
+import androidx.compose.material.icons.rounded.SwapHoriz
 import com.lenzorium.expenses.ui.screens.EntryScreen
 import com.lenzorium.expenses.ui.screens.HomeScreen
 import com.lenzorium.expenses.ui.screens.LoanDetailScreen
@@ -109,6 +113,9 @@ object Routes {
     const val SETTINGS = "settings"
     const val LOANS = "loans"
     const val CATEGORIES = "categories"
+    const val ACCOUNTS = "accounts"
+    fun account(id: Long) = "account/$id"
+    fun transfer(id: Long = 0, from: Long = 0) = "transfer?id=$id&from=$from"
     fun entry(type: TxnType, id: Long = 0) = "entry/${type.name}?id=$id"
     fun loanForm(id: Long = 0, existing: Boolean = false) = "loanForm?id=$id&existing=$existing"
     fun repay(loanId: Long = 0, id: Long = 0) = "loanEvent/LOAN_REPAYMENT?loanId=$loanId&id=$id"
@@ -122,6 +129,7 @@ object Routes {
         TxnType.LOAN_RECEIVED -> loanForm(loanId ?: 0)
         TxnType.LOAN_REPAYMENT -> repay(loanId ?: 0, id)
         TxnType.LOAN_CHARGE -> charge(loanId ?: 0, id)
+        TxnType.TRANSFER -> transfer(id)
     }
 }
 
@@ -217,12 +225,28 @@ internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String 
     ) { padding ->
       CompositionLocalProvider(LocalMessenger provides messenger) {
         NavHost(nav, startDestination = startRoute, modifier = Modifier.padding(padding).consumeWindowInsets(padding)) {
-            composable(Routes.HOME) { HomeScreen(state, nav) { repo.settings.update { it.copy(hideAmounts = !it.hideAmounts) } } }
+            composable(Routes.HOME) {
+                HomeScreen(
+                    state, nav,
+                    onDismissAccountsNotice = { repo.settings.update { it.copy(accountsNotice = false) } },
+                ) { repo.settings.update { it.copy(hideAmounts = !it.hideAmounts) } }
+            }
             composable(Routes.TXNS) { TransactionsScreen(state, nav) }
             composable(Routes.REPORTS) { ReportsScreen(state, repo) }
             composable(Routes.SETTINGS) { SettingsScreen(state, repo, nav) }
             composable(Routes.LOANS) { LoansScreen(state, nav) }
             composable(Routes.CATEGORIES) { CategoriesScreen(state, repo, nav) }
+            composable(Routes.ACCOUNTS) { AccountsScreen(state, repo, nav) }
+            composable("account/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
+                AccountDetailScreen(state, repo, e.arguments?.getLong("id") ?: 0L, nav)
+            }
+            composable(
+                "transfer?id={id}&from={from}",
+                arguments = listOf(
+                    navArgument("id") { type = NavType.LongType; defaultValue = 0L },
+                    navArgument("from") { type = NavType.LongType; defaultValue = 0L },
+                ),
+            ) { e -> TransferScreen(repo, state, e.arguments?.getLong("id") ?: 0L, e.arguments?.getLong("from") ?: 0L, nav) }
             composable(
                 "entry/{type}?id={id}",
                 arguments = listOf(navArgument("type") { type = NavType.StringType }, navArgument("id") { type = NavType.LongType; defaultValue = 0L }),
@@ -272,6 +296,7 @@ internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String 
                 Text("What would you like to record?", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp))
                 AddOption(Icons.Rounded.RemoveCircle, m.expense, "Add Expense", "Record money you spent") { addSheet = false; nav.navigate(Routes.entry(TxnType.EXPENSE)) }
                 AddOption(Icons.Rounded.TrendingUp, m.income, "Add Income", "Salary, business, gifts and more") { addSheet = false; nav.navigate(Routes.entry(TxnType.INCOME)) }
+                AddOption(Icons.Rounded.SwapHoriz, MaterialTheme.colorScheme.primary, "Transfer", "Move money between Cash and Bank") { addSheet = false; nav.navigate(Routes.transfer()) }
                 AddOption(Icons.Rounded.AccountBalance, m.loan, "Take Loan", "Money you borrowed — adds to balance and debt") { addSheet = false; nav.navigate(Routes.loanForm()) }
                 AddOption(Icons.Rounded.Payments, m.loan, "Repay Loan", "Pay back part or all of a loan") { addSheet = false; nav.navigate(Routes.repay()) }
             }

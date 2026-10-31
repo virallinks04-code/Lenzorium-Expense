@@ -163,6 +163,51 @@ class LedgerMathTest {
         assertEquals(u(550), LedgerMath.outstandingDebt(listOf(l1, l2, opening), txns))
     }
 
+    // ---- Accounts (Cash / Bank) ----
+    private val cash = com.lenzorium.expenses.data.Account(id = 1, name = "Cash", kind = com.lenzorium.expenses.data.AccountKind.CASH, openingMinor = u(400))
+    private val bank = com.lenzorium.expenses.data.Account(id = 2, name = "Bank", kind = com.lenzorium.expenses.data.AccountKind.BANK, openingMinor = u(600))
+    private fun on(acc: Long, t: Txn) = t.copy(accountId = acc)
+
+    /** The spec example split across Cash and Bank: account balances must add up to the same totals. */
+    @Test
+    fun accountsAddUpToAvailableBalance() {
+        val l = loan(1, 300)
+        val txns = listOf(
+            on(2, txn(TxnType.INCOME, 500)),                         // salary into Bank
+            on(1, txn(TxnType.LOAN_RECEIVED, 300, loanId = 1)),      // loan received in Cash
+            on(1, txn(TxnType.EXPENSE, 200)),                        // spent from Cash
+            on(2, txn(TxnType.LOAN_REPAYMENT, 100, ts = 2_000L, loanId = 1)), // repaid from Bank
+        )
+        val accounts = listOf(cash, bank)
+        val opening = LedgerMath.totalOpening(accounts)
+        assertEquals(u(1000), opening)
+        assertEquals(u(500), LedgerMath.accountBalance(cash, txns))   // 400 + 300 − 200
+        assertEquals(u(1000), LedgerMath.accountBalance(bank, txns))  // 600 + 500 − 100
+        val available = LedgerMath.availableBalance(opening, txns)
+        assertEquals(u(1500), available)
+        assertEquals(available, accounts.sumOf { LedgerMath.accountBalance(it, txns) })
+        assertEquals(u(200), LedgerMath.outstandingDebt(listOf(l), txns))
+    }
+
+    /** A transfer (e.g. ATM withdrawal) moves money between accounts without changing the total, income or expenses. */
+    @Test
+    fun transferMovesMoneyButNotTotal() {
+        val atm = txn(TxnType.TRANSFER, 250).copy(accountId = 2, toAccountId = 1)
+        val txns = listOf(atm)
+        assertEquals(u(650), LedgerMath.accountBalance(cash, txns))
+        assertEquals(u(350), LedgerMath.accountBalance(bank, txns))
+        assertEquals(u(1000), LedgerMath.availableBalance(LedgerMath.totalOpening(listOf(cash, bank)), txns))
+        val p = LedgerMath.periodTotals(txns, 0L, 10_000L)
+        assertEquals(0L, p.income); assertEquals(0L, p.expenses); assertEquals(0L, p.borrowed); assertEquals(0L, p.repayments)
+    }
+
+    @Test
+    fun accountBalanceAsOfDate() {
+        val txns = listOf(on(1, txn(TxnType.EXPENSE, 100, ts = 5_000L)))
+        assertEquals(u(400), LedgerMath.accountBalance(cash, txns, beforeMillis = 5_000L))
+        assertEquals(u(300), LedgerMath.accountBalance(cash, txns))
+    }
+
     @Test
     fun exactDecimalArithmetic() {
         // 0.10 + 0.20 must be exactly 0.30 (floating point would drift).

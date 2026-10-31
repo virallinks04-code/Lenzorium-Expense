@@ -13,6 +13,7 @@ Already have a backup? Tap **I have a backup — restore it** on the welcome scr
 ## Home
 
 - **Available balance** — what you have right now. Tap the eye icon to hide amounts when others can see your screen.
+- **Cash, Bank and your other accounts** — each account's balance, shown on the balance card. Tap one to see its history.
 - **Outstanding debt** — what you still owe across all loans (tap to open Loans).
 - **After clearing debt** — balance minus debt (can be hidden in Settings).
 - **This month** — today's expenses, this month's expenses and income, and loan repayments (shown separately — they are not expenses).
@@ -22,12 +23,13 @@ Already have a backup? Tap **I have a backup — restore it** on the welcome scr
 
 Tap **Add Expense** on Home, or the **Add** tab for all four options.
 
-- **Expense** — amount and category are all you need. Date/time defaults to now and payment method to Cash. Optionally add the merchant, notes and a receipt photo.
-- **Income** — amount, category, and optionally the source.
-- **Take loan** — lender, amount received, date, and an optional due date. It increases both your balance and your debt. It is not income.
-- **Repay loan** — choose the loan and the amount (**Pay in full** fills the remaining amount). Repayments lower your balance and your debt. You can't repay more than is owed.
+- **Expense** — amount, category and **Paid from** (Cash, Bank, ...). Date/time defaults to now. Optionally add the merchant, notes and a receipt photo.
+- **Income** — amount, category, **Received into**, and optionally the source.
+- **Transfer** — move money between your own accounts, e.g. an ATM withdrawal from Bank to Cash. Your total, income and expenses don't change.
+- **Take loan** — lender, amount received, the account it went into, date, and an optional due date. It increases both your balance and your debt. It is not income.
+- **Repay loan** — choose the loan, the amount and the account you paid from (**Pay in full** fills the remaining amount). Repayments lower your balance and your debt. You can't repay more than is owed.
 
-If saving would make your balance negative, the app asks you to confirm first. If you leave a form with unsaved changes, the app asks before discarding them.
+If saving would make an account or your total balance negative, the app asks you to confirm first. If you leave a form with unsaved changes, the app asks before discarding them.
 
 ## Transactions
 
@@ -47,7 +49,8 @@ Choose **Day**, **Week**, **Month** or **Custom**, and use the arrows to move be
 
 ## Settings
 
-- Currency, opening balance, tracking start date, categories (add/rename/delete — deleted categories' entries move to *Other*).
+- **Accounts** — add a second bank, JazzCash, Easypaisa and so on; set each account's starting balance; archive accounts you no longer use.
+- Currency, tracking start date, categories (add/rename/delete — deleted categories' entries move to *Other*).
 - Theme: system, light or dark. Show/hide *Balance after clearing debt*.
 - PIN lock and fingerprint/face unlock. The app re-locks after 30 seconds in the background.
 - **Create full backup** — one .zip file with all transactions, loans, categories, settings and receipt photos. Save it somewhere off the phone (e.g. Google Drive).
@@ -63,5 +66,5 @@ Yes. Every entry is written to the phone's storage the moment you tap Save, and 
 
 ## Good to know
 
-- Cash, Bank and Card are labels for how you paid. They are not separate account balances, and credit-card limits or card debt are not tracked.
+- Debit-card payments come out of your bank, so record them as **Paid from: Bank**. Credit-card limits and card debt aren't tracked.
 - Everything is stored only on your phone. Uninstalling the app deletes it — make a backup first.

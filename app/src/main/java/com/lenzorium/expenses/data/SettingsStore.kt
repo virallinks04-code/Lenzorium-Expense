@@ -27,6 +27,10 @@ data class AppSettings(
     val hideAmounts: Boolean = false,
     /** Epoch millis of the last full backup the user saved, or 0. */
     val lastBackupAt: Long = 0L,
+    /** True once the old single opening balance has been moved into accounts. */
+    val accountsMigrated: Boolean = false,
+    /** Show a one-time note on Home asking the user to check their Cash/Bank split. */
+    val accountsNotice: Boolean = false,
 ) {
     val currency: CurrencyInfo get() = Currencies.find(currencyCode)
     val lockEnabled: Boolean get() = pinHash != null
@@ -50,6 +54,8 @@ class SettingsStore(context: Context) {
         biometricEnabled = prefs.getBoolean(K_BIO, false),
         hideAmounts = prefs.getBoolean(K_HIDE, false),
         lastBackupAt = prefs.getLong(K_LAST_BACKUP, 0L),
+        accountsMigrated = prefs.getBoolean(K_ACC_MIGRATED, false),
+        accountsNotice = prefs.getBoolean(K_ACC_NOTICE, false),
     )
 
     @Synchronized
@@ -68,6 +74,8 @@ class SettingsStore(context: Context) {
             .putBoolean(K_BIO, s.biometricEnabled)
             .putBoolean(K_HIDE, s.hideAmounts)
             .putLong(K_LAST_BACKUP, s.lastBackupAt)
+            .putBoolean(K_ACC_MIGRATED, s.accountsMigrated)
+            .putBoolean(K_ACC_NOTICE, s.accountsNotice)
             .commit()
         _state.value = s
     }
@@ -97,6 +105,8 @@ class SettingsStore(context: Context) {
         private const val K_BIO = "biometric"
         private const val K_HIDE = "hide_amounts"
         private const val K_LAST_BACKUP = "last_backup"
+        private const val K_ACC_MIGRATED = "accounts_migrated"
+        private const val K_ACC_NOTICE = "accounts_notice"
 
         fun hash(pin: String, salt: String): String {
             // Iterated SHA-256; PIN never stored in plain text.

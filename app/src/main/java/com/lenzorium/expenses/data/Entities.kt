@@ -10,7 +10,9 @@ enum class TxnType {
     INCOME,
     LOAN_RECEIVED,
     LOAN_REPAYMENT,
-    LOAN_CHARGE;
+    LOAN_CHARGE,
+    /** Money moved between two of the user's accounts (e.g. ATM withdrawal). Total balance is unchanged. */
+    TRANSFER;
 
     val isLoanRelated: Boolean get() = this == LOAN_RECEIVED || this == LOAN_REPAYMENT || this == LOAN_CHARGE
 
@@ -21,6 +23,7 @@ enum class TxnType {
             LOAN_RECEIVED -> "Loan received"
             LOAN_REPAYMENT -> "Loan repayment"
             LOAN_CHARGE -> "Loan charge"
+            TRANSFER -> "Transfer"
         }
 }
 
@@ -36,6 +39,26 @@ enum class PayMethod {
 }
 
 enum class CategoryKind { EXPENSE, INCOME }
+
+enum class AccountKind(val label: String) {
+    CASH("Cash"),
+    BANK("Bank account"),
+    WALLET("Mobile wallet"),
+    OTHER("Other"),
+}
+
+/** A place where money is kept: cash in hand, a bank account, a mobile wallet. */
+@Entity(tableName = "accounts")
+data class Account(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val kind: AccountKind,
+    /** Balance on the tracking start date. */
+    val openingMinor: Long = 0,
+    /** Hidden from pickers but kept so old entries still show where the money went. */
+    val archived: Boolean = false,
+    val sortOrder: Int = 0,
+)
 
 @Entity(tableName = "categories")
 data class Category(
@@ -95,6 +118,10 @@ data class Txn(
     val loanId: Long? = null,
     val requestId: String,
     val createdAt: Long,
+    /** Account the money left (expense, repayment, transfer source) or arrived in (income, loan received). */
+    val accountId: Long? = null,
+    /** Destination account of a transfer. */
+    val toAccountId: Long? = null,
 )
 
 class Converters {
@@ -104,4 +131,6 @@ class Converters {
     @TypeConverter fun stringToPay(v: String?): PayMethod? = v?.let { PayMethod.valueOf(it) }
     @TypeConverter fun kindToString(v: CategoryKind): String = v.name
     @TypeConverter fun stringToKind(v: String): CategoryKind = CategoryKind.valueOf(v)
+    @TypeConverter fun accountKindToString(v: AccountKind): String = v.name
+    @TypeConverter fun stringToAccountKind(v: String): AccountKind = AccountKind.valueOf(v)
 }

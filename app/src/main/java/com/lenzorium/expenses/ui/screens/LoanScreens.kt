@@ -84,7 +84,8 @@ import com.lenzorium.expenses.ui.components.EmptyState
 import com.lenzorium.expenses.ui.components.ErrorBanner
 import com.lenzorium.expenses.ui.components.IconBadge
 import com.lenzorium.expenses.ui.components.MessageDialog
-import com.lenzorium.expenses.ui.components.PayMethodSelector
+import com.lenzorium.expenses.ui.components.AccountSelector
+import com.lenzorium.expenses.ui.negativeWarning
 import com.lenzorium.expenses.ui.components.ScreenScaffold
 import com.lenzorium.expenses.ui.components.SectionCard
 import com.lenzorium.expenses.ui.components.SectionTitle
@@ -319,7 +320,7 @@ fun LoanDetailScreen(state: LedgerState, repo: Repository, loanId: Long, nav: Na
                 item {
                     SectionCard {
                         Column(Modifier.padding(vertical = 4.dp)) {
-                            history.forEach { t -> TxnRow(t, null, c, onClick = { nav.navigate(Routes.txn(t.id)) }, showDate = true) }
+                            history.forEach { t -> TxnRow(t, null, c, onClick = { nav.navigate(Routes.txn(t.id)) }, showDate = true, account = state.accountLabel(t)) }
                         }
                     }
                 }
@@ -369,18 +370,18 @@ class LoanFormViewModel(private val repo: Repository, private val editId: Long, 
     var receivedAt by mutableStateOf(System.currentTimeMillis())
     var dueEpochDay by mutableStateOf<Long?>(null)
     var notes by mutableStateOf("")
-    var method by mutableStateOf(PayMethod.CASH)
+    var accountId by mutableStateOf<Long?>(null)
     var isOpening by mutableStateOf(existingFlag)
     var loaded by mutableStateOf(editId == 0L)
     var saving by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
-    var confirmNegative by mutableStateOf<Long?>(null)
+    var confirmNegative by mutableStateOf<String?>(null)
     var savedId by mutableStateOf<Long?>(null)
     private var original: Loan? = null
     private val requestId = UUID.randomUUID().toString()
     val isEdit get() = editId != 0L
 
-    private fun snapshot() = listOf(lender, title, amount, receivedAt, dueEpochDay, notes, method).toString()
+    private fun snapshot() = listOf(lender, title, amount, receivedAt, dueEpochDay, notes, accountId).toString()
     private var initial: String? = if (editId == 0L) snapshot() else null
     val dirty: Boolean get() = loaded && savedId == null && initial != null && snapshot() != initial
     fun markClean() { initial = snapshot() }
@@ -398,7 +399,7 @@ class LoanFormViewModel(private val repo: Repository, private val editId: Long, 
         }
     }
 
-    fun save(available: Long, confirmed: Boolean) {
+    fun save(state: LedgerState, confirmed: Boolean) {
         if (saving || savedId != null) return
         error = null
         val minor = Money.parse(amount, repo.settings.current.currency.decimals)
@@ -406,6 +407,7 @@ class LoanFormViewModel(private val repo: Repository, private val editId: Long, 
             lender.isBlank() -> { error = "Enter the lender's name."; return }
             minor == null -> { error = "Enter a valid amount."; return }
             minor <= 0 -> { error = "Enter an amount greater than zero."; return }
+            !isOpening && accountId == null -> { error = "Choose where the money went."; return }
         }
         val o = original
         val loan = Loan(
@@ -420,15 +422,21 @@ class LoanFormViewModel(private val repo: Repository, private val editId: Long, 
             requestId = o?.requestId ?: requestId,
             createdAt = o?.createdAt ?: System.currentTimeMillis(),
         )
-        // Lowering a received loan's amount takes cash back out of the balance.
-        if (!loan.isOpening && o != null) {
-            val projected = available - o.principalMinor + loan.principalMinor
-            if (projected < 0 && loan.principalMinor < o.principalMinor && !confirmed) { confirmNegative = projected; return }
+        // Lowering a received loan's amount (or moving it to another account) takes money back out.
+        if (!loan.isOpening && o != null && !confirmed) {
+            val oldTxn = state.txns.firstOrNull { it.loanId == o.id && it.type == TxnType.LOAN_RECEIVED }
+            if (oldTxn != null) {
+                val newTxn = oldTxn.copy(amountMinor = loan.principalMinor, timestamp = loan.receivedAt, accountId = accountId)
+                val oldAcc = oldTxn.accountId
+                val warn = negativeWarning(state, oldTxn, newTxn)
+                    ?: if (oldAcc != null && oldAcc != accountId) negativeWarning(state, oldTxn, oldTxn.copy(amountMinor = 0)) else null
+                if (warn != null) { confirmNegative = warn; return }
+            }
         }
         confirmNegative = null
         saving = true
         viewModelScope.launch {
-            when (val r = repo.saveLoan(loan, if (loan.isOpening) null else method)) {
+            when (val r = repo.saveLoan(loan, if (loan.isOpening) null else accountId)) {
                 is SaveResult.Ok -> savedId = r.id
                 is SaveResult.Error -> error = r.message
             }
@@ -451,10 +459,11 @@ fun LoanFormScreen(repo: Repository, state: LedgerState, editId: Long, existing:
             nav.popBackStack()
         }
     }
-    LaunchedEffect(vm.loaded) {
-        // Pre-fill the payment method from the linked "received" entry when editing.
-        if (vm.loaded && vm.isEdit) {
-            state.txns.firstOrNull { it.loanId == editId && it.type == TxnType.LOAN_RECEIVED }?.paymentMethod?.let { vm.method = it }
+    LaunchedEffect(vm.loaded, state.accounts) {
+        // Pre-fill the account from the linked "received" entry when editing; default to the first account otherwise.
+        if (vm.loaded && vm.accountId == null) {
+            if (vm.isEdit) state.txns.firstOrNull { it.loanId == editId && it.type == TxnType.LOAN_RECEIVED }?.accountId?.let { vm.accountId = it }
+            else vm.accountId = state.activeAccounts.firstOrNull()?.id
             vm.markClean()
         }
     }
@@ -466,7 +475,7 @@ fun LoanFormScreen(repo: Repository, state: LedgerState, editId: Long, existing:
     }
     ScreenScaffold(
         title, nav, onBack = back,
-        bottomBar = { if (vm.loaded) FormSaveBar(if (vm.isEdit) "Save changes" else "Save loan", vm.saving) { vm.save(state.available, false) } },
+        bottomBar = { if (vm.loaded) FormSaveBar(if (vm.isEdit) "Save changes" else "Save loan", vm.saving) { vm.save(state, false) } },
     ) { padding ->
         if (!vm.loaded) { CircularProgressIndicator(Modifier.padding(padding).padding(24.dp)); return@ScreenScaffold }
         Column(
@@ -496,7 +505,10 @@ fun LoanFormScreen(repo: Repository, state: LedgerState, editId: Long, existing:
             FormSection {
                 if (!vm.isOpening) {
                     DateTimeField(vm.receivedAt, { vm.receivedAt = it }, minDate = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay), label = "Date received")
-                    PayMethodSelector(vm.method, { vm.method = it })
+                    AccountSelector(
+                        state.activeAccounts + listOfNotNull(vm.accountId?.let { id -> state.accountById[id]?.takeIf { it.archived } }),
+                        vm.accountId, { vm.accountId = it }, state.accountBalances, c, label = "Received into",
+                    )
                 }
                 Column {
                     Text("Due date", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -514,8 +526,8 @@ fun LoanFormScreen(repo: Repository, state: LedgerState, editId: Long, existing:
     }
     if (pickDue) DatePickDialog(vm.dueEpochDay?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now().plusMonths(1), { vm.dueEpochDay = it.toEpochDay() }, { pickDue = false })
     vm.confirmNegative?.let {
-        ConfirmDialog("Balance will go negative", "After this change your available balance will be ${Money.format(it, c)}. Save anyway?", "Save anyway",
-            onConfirm = { vm.save(state.available, true) }, onDismiss = { vm.confirmNegative = null })
+        ConfirmDialog("Balance will go negative", it, "Save anyway",
+            onConfirm = { vm.save(state, true) }, onDismiss = { vm.confirmNegative = null })
     }
 }
 
@@ -535,19 +547,19 @@ class LoanEventViewModel(private val repo: Repository, val type: TxnType, initia
     var loanId by mutableStateOf(initialLoan.takeIf { it != 0L })
     var amount by mutableStateOf("")
     var timestamp by mutableStateOf(System.currentTimeMillis())
-    var method by mutableStateOf(PayMethod.CASH)
+    var accountId by mutableStateOf<Long?>(null)
     var notes by mutableStateOf("")
     var loaded by mutableStateOf(editId == 0L)
     var saving by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
-    var confirmNegative by mutableStateOf<Long?>(null)
+    var confirmNegative by mutableStateOf<String?>(null)
     var done by mutableStateOf(false)
     var original: Txn? = null
         private set
     private val requestId = UUID.randomUUID().toString()
     val isEdit get() = editId != 0L
 
-    private fun snapshot() = listOf(loanId, amount, timestamp, method, notes).toString()
+    private fun snapshot() = listOf(loanId, amount, timestamp, notes).toString()
     private var initial: String? = if (editId == 0L) snapshot() else null
     val dirty: Boolean get() = loaded && !done && initial != null && snapshot() != initial
 
@@ -558,7 +570,7 @@ class LoanEventViewModel(private val repo: Repository, val type: TxnType, initia
                 loanId = t.loanId
                 amount = Money.toInput(t.amountMinor, repo.settings.current.currency.decimals)
                 timestamp = t.timestamp
-                method = t.paymentMethod ?: PayMethod.CASH
+                accountId = t.accountId
                 notes = t.notes
             }
             initial = snapshot()
@@ -566,7 +578,7 @@ class LoanEventViewModel(private val repo: Repository, val type: TxnType, initia
         }
     }
 
-    fun save(available: Long, owed: Long?, confirmed: Boolean) {
+    fun save(state: LedgerState, owed: Long?, confirmed: Boolean) {
         if (saving || done) return
         error = null
         val minor = Money.parse(amount, repo.settings.current.currency.decimals)
@@ -574,6 +586,7 @@ class LoanEventViewModel(private val repo: Repository, val type: TxnType, initia
             loanId == null -> { error = "Choose a loan."; return }
             minor == null -> { error = "Enter a valid amount."; return }
             minor <= 0 -> { error = "Enter an amount greater than zero."; return }
+            type == TxnType.LOAN_REPAYMENT && accountId == null -> { error = "Choose where you paid from."; return }
             type == TxnType.LOAN_REPAYMENT && owed != null && minor > owed ->
                 { error = "That's more than the ${Money.format(owed, repo.settings.current.currency)} still owed."; return }
         }
@@ -583,15 +596,14 @@ class LoanEventViewModel(private val repo: Repository, val type: TxnType, initia
             type = type,
             amountMinor = minor!!,
             timestamp = timestamp,
-            paymentMethod = if (type == TxnType.LOAN_REPAYMENT) method else null,
+            accountId = if (type == TxnType.LOAN_REPAYMENT) accountId else null,
             notes = notes.trim(),
             loanId = loanId,
             requestId = o?.requestId ?: requestId,
             createdAt = o?.createdAt ?: System.currentTimeMillis(),
         )
         if (type == TxnType.LOAN_REPAYMENT) {
-            val projected = available - (o?.let { LedgerMath.cashDelta(it) } ?: 0L) + LedgerMath.cashDelta(txn)
-            if (projected < 0 && projected < available && !confirmed) { confirmNegative = projected; return }
+            if (!confirmed) negativeWarning(state, o, txn)?.let { confirmNegative = it; return }
         }
         confirmNegative = null
         saving = true
@@ -628,6 +640,9 @@ fun LoanEventScreen(repo: Repository, state: LedgerState, type: TxnType, loanId:
         }
     }
     val back = rememberDiscardGuard(vm.dirty) { nav.popBackStack() }
+    LaunchedEffect(vm.loaded, state.accounts) {
+        if (vm.loaded && !vm.isEdit && vm.accountId == null) vm.accountId = state.activeAccounts.firstOrNull()?.id
+    }
 
     val selectable = state.loanSummaries.filter { it.outstanding > 0 || it.loan.id == vm.loanId }
     val selected = vm.loanId?.let { state.summary(it) }
@@ -643,7 +658,7 @@ fun LoanEventScreen(repo: Repository, state: LedgerState, type: TxnType, loanId:
         bottomBar = {
             if (vm.loaded && selectable.isNotEmpty()) FormSaveBar(
                 if (vm.isEdit) "Save changes" else if (isRepay) "Save repayment" else "Add charge", vm.saving,
-            ) { vm.save(state.available, if (isRepay) owed else null, false) }
+            ) { vm.save(state, if (isRepay) owed else null, false) }
         },
     ) { padding ->
         if (!vm.loaded) { CircularProgressIndicator(Modifier.padding(padding).padding(24.dp)); return@ScreenScaffold }
@@ -683,7 +698,10 @@ fun LoanEventScreen(repo: Repository, state: LedgerState, type: TxnType, loanId:
             }
             FormSection {
                 DateTimeField(vm.timestamp, { vm.timestamp = it }, minDate = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay), label = if (isRepay) "Payment date" else "Date")
-                if (isRepay) PayMethodSelector(vm.method, { vm.method = it })
+                if (isRepay) AccountSelector(
+                    state.activeAccounts + listOfNotNull(vm.accountId?.let { id -> state.accountById[id]?.takeIf { it.archived } }),
+                    vm.accountId, { vm.accountId = it }, state.accountBalances, c, label = "Paid from",
+                )
                 TextInput(vm.notes, { vm.notes = it }, if (isRepay) "Notes" else "Description", singleLine = false, placeholder = if (isRepay) null else "e.g. Late fee, monthly interest")
             }
             if (isRepay) Text("Repayments reduce your balance and your debt. They're shown separately from everyday expenses.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -692,8 +710,8 @@ fun LoanEventScreen(repo: Repository, state: LedgerState, type: TxnType, loanId:
         }
     }
     vm.confirmNegative?.let {
-        ConfirmDialog("Balance will go negative", "After this repayment your available balance will be ${Money.format(it, c)}. Save anyway?", "Save anyway",
-            onConfirm = { vm.save(state.available, owed, true) }, onDismiss = { vm.confirmNegative = null })
+        ConfirmDialog("Balance will go negative", it, "Save anyway",
+            onConfirm = { vm.save(state, owed, true) }, onDismiss = { vm.confirmNegative = null })
     }
 }
 

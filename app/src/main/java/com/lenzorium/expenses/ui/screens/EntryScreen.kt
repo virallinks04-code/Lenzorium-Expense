@@ -64,7 +64,8 @@ import com.lenzorium.expenses.ui.components.CategoryPicker
 import com.lenzorium.expenses.ui.components.ConfirmDialog
 import com.lenzorium.expenses.ui.components.DateTimeField
 import com.lenzorium.expenses.ui.components.ErrorBanner
-import com.lenzorium.expenses.ui.components.PayMethodSelector
+import com.lenzorium.expenses.ui.components.AccountSelector
+import com.lenzorium.expenses.ui.negativeWarning
 import com.lenzorium.expenses.ui.components.ScreenScaffold
 import com.lenzorium.expenses.ui.components.TextInput
 import com.lenzorium.expenses.ui.simpleFactory
@@ -87,14 +88,14 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
     var categoryId by mutableStateOf<Long?>(null)
     var timestamp by mutableStateOf(System.currentTimeMillis())
     var party by mutableStateOf("")
-    var method by mutableStateOf(PayMethod.CASH)
+    var accountId by mutableStateOf<Long?>(null)
     var notes by mutableStateOf("")
     var receipt by mutableStateOf<String?>(null)
     var loaded by mutableStateOf(editId == 0L)
     var saving by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     /** Projected balance awaiting confirmation when saving would make it negative. */
-    var confirmNegative by mutableStateOf<Long?>(null)
+    var confirmNegative by mutableStateOf<String?>(null)
     var done by mutableStateOf(false)
 
     private var original: Txn? = null
@@ -104,7 +105,7 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
 
     val isEdit get() = editId != 0L
 
-    private fun snapshot() = listOf(amount, categoryId, timestamp, party, method, notes, receipt).toString()
+    private fun snapshot() = listOf(amount, categoryId, timestamp, party, notes, receipt).toString()
     private var initial: String? = if (editId == 0L) snapshot() else null
     val dirty: Boolean get() = loaded && !done && initial != null && snapshot() != initial
 
@@ -117,7 +118,7 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
                 categoryId = t.categoryId
                 timestamp = t.timestamp
                 party = t.party
-                method = t.paymentMethod ?: PayMethod.CASH
+                accountId = t.accountId
                 notes = t.notes
                 receipt = t.receiptFile
                 originalReceipt = t.receiptFile
@@ -127,13 +128,16 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
         }
     }
 
+    /** Pre-selects an account for a new entry without counting as a user change. */
+    fun setDefaultAccount(id: Long?) { accountId = id }
+
     fun replaceReceipt(name: String?) {
         val prev = receipt
         if (prev != null && prev != originalReceipt) repo.receiptFile(prev).delete()
         receipt = name
     }
 
-    fun save(currentAvailable: Long, confirmed: Boolean) {
+    fun save(state: LedgerState, confirmed: Boolean) {
         if (saving || done) return
         error = null
         val d = repo.settings.current.currency.decimals
@@ -142,6 +146,7 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
             minor == null -> { error = if (amount.isBlank()) "Enter an amount." else "Enter a valid amount (up to $d decimal places)."; return }
             minor <= 0 -> { error = "Enter an amount greater than zero."; return }
             categoryId == null -> { error = "Choose a category."; return }
+            accountId == null -> { error = if (type == TxnType.EXPENSE) "Choose where the money came from." else "Choose where the money went."; return }
         }
         val txn = Txn(
             id = original?.id ?: 0L,
@@ -150,17 +155,14 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
             categoryId = categoryId,
             timestamp = timestamp,
             party = party.trim(),
-            paymentMethod = method,
+            paymentMethod = original?.paymentMethod,
             notes = notes.trim(),
             receiptFile = receipt,
             requestId = original?.requestId ?: requestId,
             createdAt = original?.createdAt ?: System.currentTimeMillis(),
+            accountId = accountId,
         )
-        val projected = currentAvailable - (original?.let { LedgerMath.cashDelta(it) } ?: 0L) + LedgerMath.cashDelta(txn)
-        if (projected < 0 && projected < currentAvailable && !confirmed) {
-            confirmNegative = projected
-            return
-        }
+        if (!confirmed) negativeWarning(state, original, txn)?.let { confirmNegative = it; return }
         confirmNegative = null
         saving = true
         viewModelScope.launch {
@@ -205,6 +207,9 @@ fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Lon
         }
     }
     LaunchedEffect(vm.loaded) { if (vm.loaded && !vm.isEdit) runCatching { focus.requestFocus() } }
+    LaunchedEffect(vm.loaded, state.accounts) {
+        if (vm.loaded && !vm.isEdit && vm.accountId == null) vm.setDefaultAccount(state.activeAccounts.firstOrNull()?.id)
+    }
     val back = rememberDiscardGuard(vm.dirty) { nav.popBackStack() }
 
     fun importUri(uri: Uri?) {
@@ -227,7 +232,7 @@ fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Lon
             if (vm.loaded) FormSaveBar(
                 if (vm.isEdit) "Save changes" else if (isExpense) "Save expense" else "Save income",
                 saving = vm.saving, enabled = !importing,
-            ) { vm.save(state.available, confirmed = false) }
+            ) { vm.save(state, confirmed = false) }
         },
     ) { padding ->
         if (!vm.loaded) {
@@ -249,7 +254,11 @@ fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Lon
             }
             FormSection {
                 TextInput(vm.party, { vm.party = it }, if (isExpense) "Merchant or place" else "Source", placeholder = if (isExpense) "e.g. Imtiaz, petrol pump, pharmacy" else "e.g. employer or client")
-                PayMethodSelector(vm.method, { vm.method = it })
+                AccountSelector(
+                    state.activeAccounts + listOfNotNull(vm.accountId?.let { id -> state.accountById[id]?.takeIf { it.archived } }),
+                    vm.accountId, { vm.accountId = it }, state.accountBalances, c,
+                    label = if (isExpense) "Paid from" else "Received into",
+                )
                 DateTimeField(vm.timestamp, { vm.timestamp = it }, minDate = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay), showTime = true, label = "Date and time")
                 TextInput(vm.notes, { vm.notes = it }, "Notes", singleLine = false)
             }
@@ -294,12 +303,12 @@ fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Lon
         }
     }
 
-    vm.confirmNegative?.let { projected ->
+    vm.confirmNegative?.let { msg ->
         ConfirmDialog(
             title = "Balance will go negative",
-            message = "After saving, your available balance will be ${Money.format(projected, c)}. Save anyway?",
+            message = msg,
             confirmLabel = "Save anyway",
-            onConfirm = { vm.save(state.available, confirmed = true) },
+            onConfirm = { vm.save(state, confirmed = true) },
             onDismiss = { vm.confirmNegative = null },
         )
     }

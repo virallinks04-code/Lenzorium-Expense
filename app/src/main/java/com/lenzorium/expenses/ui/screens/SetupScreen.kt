@@ -72,6 +72,7 @@ fun SetupScreen(repo: Repository, onRestore: () -> Unit) {
     var step by rememberSaveable { mutableStateOf(0) }
     var currencyCode by rememberSaveable { mutableStateOf("PKR") }
     var balanceText by rememberSaveable { mutableStateOf("") }
+    var bankText by rememberSaveable { mutableStateOf("") }
     var startDay by rememberSaveable { mutableStateOf(LocalDate.now().withDayOfMonth(1).toEpochDay()) }
     val loans = remember { mutableStateListOf<OpeningLoanInput>() }
     var pin by rememberSaveable { mutableStateOf("") }
@@ -88,7 +89,8 @@ fun SetupScreen(repo: Repository, onRestore: () -> Unit) {
         when (step) {
             2 -> {
                 val v = if (balanceText.isBlank()) 0L else Money.parse(balanceText, currency.decimals)
-                if (v == null) { error = "Enter a valid amount (up to ${currency.decimals} decimal places)."; return }
+                val b = if (bankText.isBlank()) 0L else Money.parse(bankText, currency.decimals)
+                if (v == null || b == null) { error = "Enter valid amounts (up to ${currency.decimals} decimal places)."; return }
             }
             5 -> {
                 if (usePin) {
@@ -97,17 +99,20 @@ fun SetupScreen(repo: Repository, onRestore: () -> Unit) {
                 }
                 if (finishing) return
                 finishing = true
-                val opening = if (balanceText.isBlank()) 0L else Money.parse(balanceText, currency.decimals) ?: 0L
+                val cash = if (balanceText.isBlank()) 0L else Money.parse(balanceText, currency.decimals) ?: 0L
+                val bank = if (bankText.isBlank()) 0L else Money.parse(bankText, currency.decimals) ?: 0L
                 scope.launch {
                     repo.completeSetup(
                         AppSettings(
                             currencyCode = currencyCode,
-                            openingBalanceMinor = opening,
+                            openingBalanceMinor = cash + bank,
                             trackingStartEpochDay = startDay,
                             biometricEnabled = usePin && useBio,
                         ),
                         pin = if (usePin) pin else null,
                         openingLoans = loans.toList(),
+                        cashOpening = cash,
+                        bankOpening = bank,
                     )
                 }
                 return
@@ -125,8 +130,13 @@ fun SetupScreen(repo: Repository, onRestore: () -> Unit) {
                 0 -> Welcome(onRestore)
                 1 -> CurrencyStep(currencyCode) { currencyCode = it }
                 2 -> Column(Modifier.verticalScroll(rememberScrollState())) {
-                    StepHeader("Your current balance", "How much money do you have available right now, across cash and bank? You can enter 0.")
-                    AmountField(balanceText, { balanceText = it }, currency, label = "Available balance")
+                    StepHeader("Where is your money?", "Enter what you have right now. You can enter 0, and add more accounts (another bank, JazzCash, Easypaisa) later in Settings.")
+                    AmountField(balanceText, { balanceText = it }, currency, label = "Cash in hand")
+                    Spacer(Modifier.height(12.dp))
+                    AmountField(bankText, { bankText = it }, currency, label = "Money in bank")
+                    Spacer(Modifier.height(10.dp))
+                    val total = (Money.parse(balanceText.ifBlank { "0" }, currency.decimals) ?: 0L) + (Money.parse(bankText.ifBlank { "0" }, currency.decimals) ?: 0L)
+                    Text("Total available: ${Money.format(total, currency)}", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(8.dp))
                     Text("Don't include money you owe — you can add existing loans in a moment.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

@@ -58,8 +58,15 @@ class MoneyAndBackupTest {
             Txn(id = 2, type = TxnType.LOAN_RECEIVED, amountMinor = 30000, timestamp = 1000, party = "Ali", paymentMethod = PayMethod.CASH, loanId = 1, requestId = "t2", createdAt = 1),
             Txn(id = 3, type = TxnType.LOAN_REPAYMENT, amountMinor = 10000, timestamp = 3000, party = "Ali", paymentMethod = PayMethod.BANK, loanId = 1, requestId = "t3", createdAt = 1),
         )
-        val settings = AppSettings(setupDone = true, currencyCode = "PKR", openingBalanceMinor = 100000, trackingStartEpochDay = 19000, pinHash = "h", pinSalt = "s")
-        return BackupData(settings, cats, loans, txns, 123L)
+        val settings = AppSettings(setupDone = true, currencyCode = "PKR", openingBalanceMinor = 100000, trackingStartEpochDay = 19000, pinHash = "h", pinSalt = "s", accountsMigrated = true)
+        val accounts = listOf(
+            com.lenzorium.expenses.data.Account(1, "Cash", com.lenzorium.expenses.data.AccountKind.CASH, 40000, false, 1),
+            com.lenzorium.expenses.data.Account(2, "Bank", com.lenzorium.expenses.data.AccountKind.BANK, 60000, false, 2),
+            com.lenzorium.expenses.data.Account(3, "JazzCash", com.lenzorium.expenses.data.AccountKind.WALLET, 0, true, 3),
+        )
+        val withAccounts = txns.map { it.copy(accountId = if (it.paymentMethod == PayMethod.CASH) 1L else 2L) } +
+            Txn(id = 4, type = TxnType.TRANSFER, amountMinor = 5000, timestamp = 3500, requestId = "t4", createdAt = 1, accountId = 2, toAccountId = 1)
+        return BackupData(settings, cats, loans, withAccounts, 123L, accounts)
     }
 
     @Test
@@ -70,6 +77,32 @@ class MoneyAndBackupTest {
         assertEquals(d.loans, back.loans)
         assertEquals(d.txns, back.txns)
         assertEquals(d.settings, back.settings)
+        assertEquals(d.accounts, back.accounts)
+    }
+
+    /** A backup made before accounts existed is upgraded the same way as the database. */
+    @Test
+    fun oldBackupWithoutAccountsIsUpgraded() {
+        val d = sample()
+        val v1 = org.json.JSONObject(BackupCodec.encode(d)).apply {
+            put("version", 1)
+            remove("accounts")
+            val arr = getJSONArray("transactions")
+            val keep = org.json.JSONArray()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                if (o.getString("type") == "TRANSFER") continue
+                o.remove("accountId"); o.remove("toAccountId"); keep.put(o)
+            }
+            put("transactions", keep)
+        }.toString()
+        val back = BackupCodec.decode(v1)
+        assertEquals(listOf("Cash", "Bank"), back.accounts.map { it.name })
+        assertEquals(100000L, back.accounts.first { it.name == "Cash" }.openingMinor)  // old opening balance goes to Cash
+        val byId = back.txns.associateBy { it.id }
+        assertEquals(2L, byId[1]!!.accountId) // CARD → Bank
+        assertEquals(1L, byId[2]!!.accountId) // CASH → Cash
+        assertEquals(2L, byId[3]!!.accountId) // BANK → Bank
     }
 
     @Test

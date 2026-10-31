@@ -2,6 +2,7 @@ package com.lenzorium.expenses.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -139,6 +140,7 @@ fun txnIcon(t: Txn, cat: Category?): ImageVector = when (t.type) {
     TxnType.LOAN_RECEIVED -> Icons.Rounded.AccountBalance
     TxnType.LOAN_REPAYMENT -> Icons.Rounded.Payments
     TxnType.LOAN_CHARGE -> Icons.Rounded.RequestQuote
+    TxnType.TRANSFER -> Icons.Rounded.SwapHoriz
 }
 
 fun txnTitle(t: Txn, cat: Category?): String = when (t.type) {
@@ -146,6 +148,7 @@ fun txnTitle(t: Txn, cat: Category?): String = when (t.type) {
     TxnType.LOAN_RECEIVED -> "Loan from ${t.party}"
     TxnType.LOAN_REPAYMENT -> "Repaid to ${t.party}"
     TxnType.LOAN_CHARGE -> "Loan charge · ${t.party}"
+    TxnType.TRANSFER -> t.notes.ifBlank { "Transfer" }
 }
 
 @Composable
@@ -154,14 +157,18 @@ fun txnColor(type: TxnType): Color {
     return when (type) {
         TxnType.EXPENSE -> m.expense
         TxnType.INCOME -> m.income
+        TxnType.TRANSFER -> MaterialTheme.colorScheme.primary
         else -> m.loan
     }
 }
 
 /** Signed amount text as it affects available cash ("debt +" for charges). */
 fun txnAmountText(t: Txn, c: CurrencyInfo): String =
-    if (t.type == TxnType.LOAN_CHARGE) "Debt +${Money.number(t.amountMinor, c.decimals)} ${c.code}"
-    else Money.formatSigned(LedgerMath.cashDelta(t), c)
+    when (t.type) {
+        TxnType.LOAN_CHARGE -> "Debt +${Money.number(t.amountMinor, c.decimals)} ${c.code}"
+        TxnType.TRANSFER -> Money.format(t.amountMinor, c)
+        else -> Money.formatSigned(LedgerMath.cashDelta(t), c)
+    }
 
 // ---------- Building blocks ----------
 
@@ -178,9 +185,10 @@ fun IconBadge(icon: ImageVector, tint: Color, modifier: Modifier = Modifier, siz
 }
 
 @Composable
-fun TxnRow(t: Txn, cat: Category?, currency: CurrencyInfo, onClick: () -> Unit, showDate: Boolean = false) {
+fun TxnRow(t: Txn, cat: Category?, currency: CurrencyInfo, onClick: () -> Unit, showDate: Boolean = false, account: String? = null) {
     val tint = when (t.type) {
         TxnType.EXPENSE, TxnType.INCOME -> cat?.let { Color(it.colorArgb) } ?: txnColor(t.type)
+        TxnType.TRANSFER -> MaterialTheme.colorScheme.primary
         else -> LocalMoneyColors.current.loan
     }
     Row(
@@ -195,8 +203,8 @@ fun TxnRow(t: Txn, cat: Category?, currency: CurrencyInfo, onClick: () -> Unit, 
         Column(Modifier.weight(1f)) {
             Text(txnTitle(t, cat), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val parts = buildList {
-                add(if (t.type.isLoanRelated) t.type.label else cat?.name ?: t.type.label)
-                t.paymentMethod?.let { add(it.label) }
+                if (t.type != TxnType.TRANSFER) add(if (t.type.isLoanRelated) t.type.label else cat?.name ?: t.type.label)
+                (account ?: t.paymentMethod?.label)?.let { add(it) }
                 add(if (showDate) Dates.date(t.timestamp) else Dates.time(t.timestamp))
             }
             Text(
@@ -353,6 +361,58 @@ fun PayMethodSelector(selected: PayMethod?, onSelect: (PayMethod) -> Unit, modif
             }
         }
     }
+}
+
+/** Choose which account (Cash, Bank, ...) money comes from or goes to. Shows each account's current balance. */
+@Composable
+fun AccountSelector(
+    accounts: List<com.lenzorium.expenses.data.Account>,
+    selectedId: Long?,
+    onSelect: (Long) -> Unit,
+    balances: Map<Long, Long>,
+    currency: CurrencyInfo,
+    label: String,
+    modifier: Modifier = Modifier,
+    excludeId: Long? = null,
+) {
+    Column(modifier) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(8.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            accounts.filter { it.id != excludeId }.forEach { a ->
+                val sel = a.id == selectedId
+                Row(
+                    Modifier
+                        .background(
+                            if (sel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            MaterialTheme.shapes.medium,
+                        )
+                        .then(if (sel) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium) else Modifier)
+                        .clickable { onSelect(a.id) }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(accountIcon(a.kind), null, Modifier.size(20.dp), tint = if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(a.name, style = MaterialTheme.typography.titleSmall, color = if (sel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
+                        Text(
+                            Money.format(balances[a.id] ?: 0L, currency),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if ((balances[a.id] ?: 0L) < 0) LocalMoneyColors.current.expense else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun accountIcon(kind: com.lenzorium.expenses.data.AccountKind): ImageVector = when (kind) {
+    com.lenzorium.expenses.data.AccountKind.CASH -> Icons.Rounded.Payments
+    com.lenzorium.expenses.data.AccountKind.BANK -> Icons.Rounded.AccountBalance
+    com.lenzorium.expenses.data.AccountKind.WALLET -> Icons.Rounded.PhoneAndroid
+    com.lenzorium.expenses.data.AccountKind.OTHER -> Icons.Rounded.AccountBalanceWallet
 }
 
 @Composable

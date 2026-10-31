@@ -1,5 +1,6 @@
 package com.lenzorium.expenses.domain
 
+import com.lenzorium.expenses.data.Account
 import com.lenzorium.expenses.data.Loan
 import com.lenzorium.expenses.data.Txn
 import com.lenzorium.expenses.data.TxnType
@@ -40,12 +41,33 @@ data class PeriodTotals(
  */
 object LedgerMath {
 
-    /** Effect of a transaction on available cash. Loan charges change debt only. */
+    /** Effect of a transaction on total available money. Loan charges change debt only; transfers just move money. */
     fun cashDelta(t: Txn): Long = when (t.type) {
         TxnType.INCOME, TxnType.LOAN_RECEIVED -> t.amountMinor
         TxnType.EXPENSE, TxnType.LOAN_REPAYMENT -> -t.amountMinor
+        TxnType.LOAN_CHARGE, TxnType.TRANSFER -> 0L
+    }
+
+    /** Effect of a transaction on one account's balance. */
+    fun accountDelta(t: Txn, accountId: Long): Long = when (t.type) {
+        TxnType.INCOME, TxnType.LOAN_RECEIVED -> if (t.accountId == accountId) t.amountMinor else 0L
+        TxnType.EXPENSE, TxnType.LOAN_REPAYMENT -> if (t.accountId == accountId) -t.amountMinor else 0L
+        TxnType.TRANSFER ->
+            (if (t.toAccountId == accountId) t.amountMinor else 0L) - (if (t.accountId == accountId) t.amountMinor else 0L)
         TxnType.LOAN_CHARGE -> 0L
     }
+
+    /** Account balance = its opening balance + money in − money out (entries with timestamp < [beforeMillis] if given). */
+    fun accountBalance(account: Account, txns: List<Txn>, beforeMillis: Long? = null): Long {
+        var total = account.openingMinor
+        for (t in txns) {
+            if (beforeMillis == null || t.timestamp < beforeMillis) total = Math.addExact(total, accountDelta(t, account.id))
+        }
+        return total
+    }
+
+    /** Opening balance of the whole ledger: the sum of every account's opening balance. */
+    fun totalOpening(accounts: List<Account>): Long = accounts.sumOf { it.openingMinor }
 
     /** Available balance including every transaction with timestamp < [beforeMillis] (all if null). */
     fun availableBalance(openingBalance: Long, txns: List<Txn>, beforeMillis: Long? = null): Long {
@@ -152,6 +174,7 @@ object LedgerMath {
                 TxnType.LOAN_RECEIVED -> borrowed += t.amountMinor
                 TxnType.LOAN_REPAYMENT -> repayments += t.amountMinor
                 TxnType.LOAN_CHARGE -> charges += t.amountMinor
+                TxnType.TRANSFER -> Unit
             }
         }
         return PeriodTotals(income, expenses, borrowed, repayments, charges, byCat, incByCat)

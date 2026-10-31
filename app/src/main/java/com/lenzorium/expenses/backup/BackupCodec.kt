@@ -1,6 +1,10 @@
 package com.lenzorium.expenses.backup
 
+import com.lenzorium.expenses.data.Account
+import com.lenzorium.expenses.data.AccountKind
+import com.lenzorium.expenses.data.AppDatabase
 import com.lenzorium.expenses.data.AppSettings
+import com.lenzorium.expenses.data.DefaultAccounts
 import com.lenzorium.expenses.data.Category
 import com.lenzorium.expenses.data.CategoryKind
 import com.lenzorium.expenses.data.Loan
@@ -18,6 +22,7 @@ data class BackupData(
     val loans: List<Loan>,
     val txns: List<Txn>,
     val createdAt: Long,
+    val accounts: List<Account> = DefaultAccounts.all,
 )
 
 class BackupFormatException(message: String) : Exception(message)
@@ -25,7 +30,7 @@ class BackupFormatException(message: String) : Exception(message)
 /** JSON encoding of a full backup. Pure Kotlin + org.json so it can be unit-tested. */
 object BackupCodec {
     const val FORMAT = "lenzorium-expenses-backup"
-    const val VERSION = 1
+    const val VERSION = 2
 
     fun encode(d: BackupData): String {
         val root = JSONObject()
@@ -52,6 +57,14 @@ object BackupCodec {
                 })
             }
         })
+        root.put("accounts", JSONArray().apply {
+            d.accounts.forEach { a ->
+                put(JSONObject().apply {
+                    put("id", a.id); put("name", a.name); put("kind", a.kind.name); put("openingMinor", a.openingMinor)
+                    put("archived", a.archived); put("sortOrder", a.sortOrder)
+                })
+            }
+        })
         root.put("loans", JSONArray().apply {
             d.loans.forEach { l ->
                 put(JSONObject().apply {
@@ -69,6 +82,7 @@ object BackupCodec {
                     put("paymentMethod", t.paymentMethod?.name ?: JSONObject.NULL); put("notes", t.notes)
                     put("receiptFile", t.receiptFile ?: JSONObject.NULL); put("loanId", t.loanId ?: JSONObject.NULL)
                     put("requestId", t.requestId); put("createdAt", t.createdAt)
+                    put("accountId", t.accountId ?: JSONObject.NULL); put("toAccountId", t.toAccountId ?: JSONObject.NULL)
                 })
             }
         })
@@ -130,11 +144,38 @@ object BackupCodec {
                         paymentMethod = o.optStringOrNull("paymentMethod")?.let { PayMethod.valueOf(it) }, notes = o.optString("notes", ""),
                         receiptFile = o.optStringOrNull("receiptFile"), loanId = o.optLongOrNull("loanId"),
                         requestId = o.getString("requestId"), createdAt = o.getLong("createdAt"),
+                        accountId = o.optLongOrNull("accountId"), toAccountId = o.optLongOrNull("toAccountId"),
                     )
                 }
             }
-            validate(cats, loans, txns)
-            return BackupData(settings, cats, loans, txns, root.optLong("createdAt", 0L))
+            val accounts: List<Account>
+            val finalTxns: List<Txn>
+            if (version >= 2) {
+                accounts = root.getJSONArray("accounts").let { a ->
+                    (0 until a.length()).map { i ->
+                        val o = a.getJSONObject(i)
+                        Account(
+                            id = o.getLong("id"), name = o.getString("name"), kind = AccountKind.valueOf(o.getString("kind")),
+                            openingMinor = o.getLong("openingMinor"), archived = o.optBoolean("archived", false), sortOrder = o.optInt("sortOrder", 0),
+                        )
+                    }
+                }
+                finalTxns = txns
+            } else {
+                // Backups from before accounts existed: same rules as the database upgrade.
+                accounts = DefaultAccounts.all.map { if (it.id == AppDatabase.CASH_ID) it.copy(openingMinor = settings.openingBalanceMinor) else it }
+                finalTxns = txns.map { t ->
+                    t.copy(
+                        accountId = when {
+                            t.type == TxnType.LOAN_CHARGE -> null
+                            t.paymentMethod == PayMethod.BANK || t.paymentMethod == PayMethod.CARD -> AppDatabase.BANK_ID
+                            else -> AppDatabase.CASH_ID
+                        }
+                    )
+                }
+            }
+            validate(cats, loans, finalTxns, accounts)
+            return BackupData(settings.copy(accountsMigrated = true), cats, loans, finalTxns, root.optLong("createdAt", 0L), accounts)
         } catch (e: BackupFormatException) {
             throw e
         } catch (e: Exception) {
@@ -142,7 +183,13 @@ object BackupCodec {
         }
     }
 
-    private fun validate(cats: List<Category>, loans: List<Loan>, txns: List<Txn>) {
+    private fun validate(cats: List<Category>, loans: List<Loan>, txns: List<Txn>, accounts: List<Account>) {
+        val accIds = accounts.map { it.id }.toSet()
+        if (accounts.isEmpty() || accIds.size != accounts.size) throw BackupFormatException("The backup's accounts are missing or duplicated.")
+        if (txns.any { (it.accountId != null && it.accountId !in accIds) || (it.toAccountId != null && it.toAccountId !in accIds) })
+            throw BackupFormatException("A transaction refers to a missing account.")
+        if (txns.any { it.type == TxnType.TRANSFER && (it.accountId == null || it.toAccountId == null) })
+            throw BackupFormatException("A transfer is missing its accounts.")
         val catIds = cats.map { it.id }.toSet()
         val loanIds = loans.map { it.id }.toSet()
         if (catIds.size != cats.size || loanIds.size != loans.size || txns.map { it.id }.toSet().size != txns.size)

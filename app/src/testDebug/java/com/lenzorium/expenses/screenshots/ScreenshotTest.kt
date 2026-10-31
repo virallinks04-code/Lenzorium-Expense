@@ -23,7 +23,10 @@ import com.lenzorium.expenses.data.TxnType
 import com.lenzorium.expenses.ui.LedgerState
 import com.lenzorium.expenses.ui.MainShell
 import com.lenzorium.expenses.ui.Routes
+import com.lenzorium.expenses.ui.screens.AccountDetailScreen
+import com.lenzorium.expenses.ui.screens.AccountsScreen
 import com.lenzorium.expenses.ui.screens.CategoriesScreen
+import com.lenzorium.expenses.ui.screens.TransferScreen
 import com.lenzorium.expenses.ui.screens.EntryScreen
 import com.lenzorium.expenses.ui.screens.LoanDetailScreen
 import com.lenzorium.expenses.ui.screens.LoanEventScreen
@@ -105,5 +108,9 @@ class ScreenshotTest {
     @Test fun repayLoan() = shot("12_repay_loan") { LoanEventScreen(repo, s, TxnType.LOAN_REPAYMENT, 1, 0, it) }
     @Test fun categories() = shot("13_categories") { CategoriesScreen(s, repo, it) }
     @Test fun lock() = shot("14_lock") { LockScreen(repo.settings) {} }
+    @Test fun transfer() = shot("16_transfer") { TransferScreen(repo, s, 0, 0, it) }
+    @Test fun accounts() = shot("17_accounts") { AccountsScreen(s, repo, it) }
+    @Test fun accountDetail() = shot("18_account_cash") { AccountDetailScreen(s, repo, 1, it) }
+    @Test fun txnDetailTransfer() = shot("19_transfer_detail") { TxnDetailScreen(s, repo, 100, it) }
     @Test fun setup() = shot("15_setup_welcome") { SetupScreen(repo) {} }
 }

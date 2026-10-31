@@ -107,7 +107,10 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
                     Column {
                         SettingRow(Icons.Rounded.Payments, "Currency", "${c.code} · ${c.name}") { dialog = "currency" }
                         HorizontalDivider()
-                        SettingRow(Icons.Rounded.AccountBalanceWallet, "Opening balance", Money.format(s.openingBalanceMinor, c) + " on " + Dates.epochDay(s.trackingStartEpochDay)) { dialog = "opening" }
+                        SettingRow(
+                            Icons.Rounded.AccountBalanceWallet, "Accounts",
+                            state.activeAccounts.joinToString(" · ") { "${it.name} ${Money.format(state.balanceOf(it.id), c)}" }.ifBlank { "Cash, bank and wallets" },
+                        ) { nav.navigate(com.lenzorium.expenses.ui.Routes.ACCOUNTS) }
                         HorizontalDivider()
                         SettingRow(Icons.Rounded.CalendarToday, "Tracking start date", Dates.epochDay(s.trackingStartEpochDay)) { dialog = "start" }
                         HorizontalDivider()
@@ -208,7 +211,6 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
         ) { dialog = null }
         "privacy" -> InfoDialog("Privacy policy", PrivacyText.sections, footer = "Last updated ${PrivacyText.UPDATED}") { dialog = null }
         "currency" -> CurrencyDialog(state, repo, onDone = { dialog = null })
-        "opening" -> OpeningBalanceDialog(state, repo, onDone = { dialog = null })
         "start" -> DatePickDialog(
             LocalDate.ofEpochDay(s.trackingStartEpochDay),
             onPick = { d ->
@@ -322,7 +324,7 @@ private fun SwitchRow(icon: ImageVector, title: String, subtitle: String?, check
 
 @Composable
 private fun CurrencyDialog(state: LedgerState, repo: Repository, onDone: () -> Unit) {
-    val hasData = state.txns.isNotEmpty() || state.loans.isNotEmpty() || state.settings.openingBalanceMinor != 0L
+    val hasData = state.txns.isNotEmpty() || state.loans.isNotEmpty() || state.totalOpening != 0L
     val current = state.currency
     val options = if (hasData) Currencies.all.filter { it.decimals == current.decimals } else Currencies.all
     AlertDialog(
@@ -348,31 +350,6 @@ private fun CurrencyDialog(state: LedgerState, repo: Repository, onDone: () -> U
             }
         },
         confirmButton = { TextButton(onClick = onDone) { Text("Close") } },
-    )
-}
-
-@Composable
-private fun OpeningBalanceDialog(state: LedgerState, repo: Repository, onDone: () -> Unit) {
-    val c = state.currency
-    var text by remember { mutableStateOf(Money.toInput(state.settings.openingBalanceMinor, c.decimals)) }
-    var err by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = onDone,
-        title = { Text("Opening balance") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("What you had available at the start of ${Dates.epochDay(state.settings.trackingStartEpochDay)}. Changing it shifts every balance by the difference.", style = MaterialTheme.typography.bodySmall)
-                AmountField(text, { text = it }, c, label = "Opening balance")
-                ErrorBanner(err)
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val v = if (text.isBlank()) 0L else Money.parse(text, c.decimals)
-                if (v == null) err = "Enter a valid amount." else { repo.settings.update { it.copy(openingBalanceMinor = v) }; onDone() }
-            }) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDone) { Text("Cancel") } },
     )
 }
 

@@ -69,14 +69,14 @@ class TxnFilterViewModel : ViewModel() {
     var query by mutableStateOf("")
     var types by mutableStateOf(emptySet<TxnType>())
     var categories by mutableStateOf(emptySet<Long>())
-    var methods by mutableStateOf(emptySet<PayMethod>())
+    var accounts by mutableStateOf(emptySet<Long>())
     var from by mutableStateOf<LocalDate?>(null)
     var to by mutableStateOf<LocalDate?>(null)
 
-    val active: Boolean get() = types.isNotEmpty() || categories.isNotEmpty() || methods.isNotEmpty() || from != null || to != null
+    val active: Boolean get() = types.isNotEmpty() || categories.isNotEmpty() || accounts.isNotEmpty() || from != null || to != null
 
     fun clear() {
-        types = emptySet(); categories = emptySet(); methods = emptySet(); from = null; to = null
+        types = emptySet(); categories = emptySet(); accounts = emptySet(); from = null; to = null
     }
 
     fun applyTo(state: LedgerState): List<Txn> {
@@ -86,7 +86,7 @@ class TxnFilterViewModel : ViewModel() {
         return state.txns.filter { t ->
             (types.isEmpty() || t.type in types) &&
                 (categories.isEmpty() || t.categoryId in categories) &&
-                (methods.isEmpty() || t.paymentMethod in methods) &&
+                (accounts.isEmpty() || t.accountId in accounts || t.toAccountId in accounts) &&
                 (fromMs == null || t.timestamp >= fromMs) &&
                 (toMs == null || t.timestamp < toMs) &&
                 (q.isEmpty() || matches(t, q, state))
@@ -96,7 +96,7 @@ class TxnFilterViewModel : ViewModel() {
     private fun matches(t: Txn, q: String, state: LedgerState): Boolean {
         val loan = t.loanId?.let { state.loanById[it] }
         val cat = t.categoryId?.let { state.categoryById[it] }
-        return listOfNotNull(t.party, t.notes, cat?.name, loan?.lender, loan?.title).any { it.contains(q, ignoreCase = true) }
+        return listOfNotNull(t.party, t.notes, cat?.name, loan?.lender, loan?.title, state.accountLabel(t)).any { it.contains(q, ignoreCase = true) }
     }
 }
 
@@ -105,7 +105,7 @@ fun TransactionsScreen(state: LedgerState, nav: NavController) {
     val f: TxnFilterViewModel = viewModel()
     val c = state.currency
     val m = LocalMoneyColors.current
-    val results = remember(state.txns, f.query, f.types, f.categories, f.methods, f.from, f.to) { f.applyTo(state) }
+    val results = remember(state.txns, f.query, f.types, f.categories, f.accounts, f.from, f.to) { f.applyTo(state) }
     var dialog by remember { mutableStateOf<String?>(null) }
 
     ScreenScaffold(
@@ -140,7 +140,7 @@ fun TransactionsScreen(state: LedgerState, nav: NavController) {
             ) {
                 DropChip("Type", f.types.size) { dialog = "type" }
                 DropChip("Category", f.categories.size) { dialog = "category" }
-                DropChip("Method", f.methods.size) { dialog = "method" }
+                DropChip("Account", f.accounts.size) { dialog = "method" }
                 DropChip(if (f.from != null || f.to != null) dateLabel(f.from, f.to) else "Dates", if (f.from != null || f.to != null) 1 else 0) { dialog = "dates" }
                 if (f.active) FilterChip(selected = false, onClick = { f.clear() }, label = { Text("Clear filters") })
             }
@@ -177,7 +177,7 @@ fun TransactionsScreen(state: LedgerState, nav: NavController) {
                                 }
                             }
                             items(list, key = { it.id }) { t ->
-                                TxnRow(t, t.categoryId?.let { state.categoryById[it] }, c, onClick = { nav.navigate(Routes.txn(t.id)) })
+                                TxnRow(t, t.categoryId?.let { state.categoryById[it] }, c, onClick = { nav.navigate(Routes.txn(t.id)) }, account = state.accountLabel(t))
                             }
                         }
                     }
@@ -202,10 +202,10 @@ fun TransactionsScreen(state: LedgerState, nav: NavController) {
             onDismiss = { dialog = null },
         )
         "method" -> MultiSelectDialog(
-            "Payment method",
-            PayMethod.entries.map { it to it.label },
-            f.methods,
-            onDone = { f.methods = it; dialog = null },
+            "Account",
+            state.accounts.map { it.id to it.name },
+            f.accounts,
+            onDone = { f.accounts = it; dialog = null },
             onDismiss = { dialog = null },
         )
         "dates" -> DateRangeDialog(f.from, f.to, onDone = { a, b -> f.from = a; f.to = b; dialog = null }, onDismiss = { dialog = null })

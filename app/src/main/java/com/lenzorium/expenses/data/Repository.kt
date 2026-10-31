@@ -34,6 +34,7 @@ class Repository(
     val txns = dao.observeTxns()
     val loans = dao.observeLoans()
     val categories = dao.observeCategories()
+    val accounts = dao.observeAccounts()
 
     val receiptsDir: File get() = File(context.filesDir, "receipts").apply { mkdirs() }
     fun receiptFile(name: String): File = File(receiptsDir, name)
@@ -56,12 +57,45 @@ class Repository(
         if (dao.categoryCount() == 0) dao.insertCategories(DefaultCategories.all)
     }
 
-    suspend fun completeSetup(newSettings: AppSettings, pin: String?, openingLoans: List<OpeningLoanInput>) =
+    /**
+     * Makes sure Cash and Bank exist. For people upgrading from the version without accounts, the old single
+     * opening balance is placed in Cash once, and Home asks them to check the split.
+     */
+    suspend fun ensureAccounts() = withContext(Dispatchers.IO) {
+        db.withTransaction { if (dao.allAccounts().isEmpty()) dao.insertAccounts(DefaultAccounts.all) }
+        val s = settings.current
+        if (s.setupDone && !s.accountsMigrated) {
+            val accs = dao.allAccounts()
+            val notice = s.openingBalanceMinor != 0L && accs.all { it.openingMinor == 0L }
+            if (notice) {
+                val cash = accs.firstOrNull { it.id == AppDatabase.CASH_ID } ?: accs.first()
+                dao.updateAccount(cash.copy(openingMinor = s.openingBalanceMinor))
+            }
+            settings.update { it.copy(accountsMigrated = true, accountsNotice = notice || dao.allTxns().isNotEmpty()) }
+        }
+    }
+
+    private suspend fun checkAccount(id: Long?, what: String): String? {
+        if (id == null) return "Choose $what."
+        val a = dao.account(id) ?: return "That account no longer exists."
+        return if (a.archived) "\"${a.name}\" is archived. Choose another account." else null
+    }
+
+    suspend fun completeSetup(
+        newSettings: AppSettings,
+        pin: String?,
+        openingLoans: List<OpeningLoanInput>,
+        cashOpening: Long = 0L,
+        bankOpening: Long = 0L,
+    ) =
         withContext(Dispatchers.IO) {
             val startTs = LocalDate.ofEpochDay(newSettings.trackingStartEpochDay)
                 .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
             db.withTransaction {
                 if (dao.categoryCount() == 0) dao.insertCategories(DefaultCategories.all)
+                if (dao.allAccounts().isEmpty()) dao.insertAccounts(DefaultAccounts.all)
+                dao.account(AppDatabase.CASH_ID)?.let { dao.updateAccount(it.copy(openingMinor = cashOpening)) }
+                dao.account(AppDatabase.BANK_ID)?.let { dao.updateAccount(it.copy(openingMinor = bankOpening)) }
                 val now = System.currentTimeMillis()
                 dao.insertLoans(openingLoans.map {
                     Loan(
@@ -77,7 +111,12 @@ class Repository(
                     )
                 })
             }
-            settings.update { newSettings.copy(setupDone = true, pinHash = it.pinHash, pinSalt = it.pinSalt) }
+            settings.update {
+                newSettings.copy(
+                    setupDone = true, pinHash = it.pinHash, pinSalt = it.pinSalt,
+                    openingBalanceMinor = cashOpening + bankOpening, accountsMigrated = true,
+                )
+            }
             if (pin != null) settings.setPin(pin)
             settings.update { it.copy(biometricEnabled = newSettings.biometricEnabled && pin != null) }
         }
@@ -88,6 +127,10 @@ class Repository(
         if (txn.amountMinor <= 0) return@withContext SaveResult.Error("Enter an amount greater than zero.")
         if (txn.categoryId == null) return@withContext SaveResult.Error("Choose a category.")
         checkDate(txn.timestamp)?.let { return@withContext SaveResult.Error(it) }
+        val original = if (txn.id != 0L) dao.txn(txn.id) else null
+        if (original?.accountId != txn.accountId || original == null) {
+            checkAccount(txn.accountId, "an account")?.let { return@withContext SaveResult.Error(it) }
+        }
         try {
             val id = db.withTransaction {
                 if (txn.id == 0L) {
@@ -108,10 +151,14 @@ class Repository(
      * Creates or updates a loan. A new (non-opening) loan also creates its linked
      * "loan received" transaction in the same database transaction.
      */
-    suspend fun saveLoan(loan: Loan, receivedVia: PayMethod?): SaveResult = withContext(Dispatchers.IO) {
+    suspend fun saveLoan(loan: Loan, intoAccount: Long?): SaveResult = withContext(Dispatchers.IO) {
         if (loan.lender.isBlank()) return@withContext SaveResult.Error("Enter the lender's name.")
         if (loan.principalMinor <= 0) return@withContext SaveResult.Error("Enter an amount greater than zero.")
-        if (!loan.isOpening) checkDate(loan.receivedAt)?.let { return@withContext SaveResult.Error(it) }
+        if (!loan.isOpening) {
+            checkDate(loan.receivedAt)?.let { return@withContext SaveResult.Error(it) }
+            val current = if (loan.id != 0L) dao.txnsForLoan(loan.id).firstOrNull { it.type == TxnType.LOAN_RECEIVED }?.accountId else null
+            if (loan.id == 0L || current != intoAccount) checkAccount(intoAccount, "the account the money went into")?.let { return@withContext SaveResult.Error(it) }
+        }
         try {
             db.withTransaction {
                 if (loan.id == 0L) {
@@ -124,9 +171,9 @@ class Repository(
                                 amountMinor = loan.principalMinor,
                                 timestamp = loan.receivedAt,
                                 party = loan.lender,
-                                paymentMethod = receivedVia,
                                 notes = loan.title,
                                 loanId = id,
+                                accountId = intoAccount,
                                 requestId = loan.requestId + "-received",
                                 createdAt = System.currentTimeMillis(),
                             )
@@ -147,7 +194,7 @@ class Repository(
                                 amountMinor = fixed.principalMinor,
                                 timestamp = fixed.receivedAt,
                                 party = fixed.lender,
-                                paymentMethod = receivedVia ?: r.paymentMethod,
+                                accountId = intoAccount ?: r.accountId,
                                 notes = fixed.title,
                             )
                         )
@@ -166,6 +213,10 @@ class Repository(
         if (txn.amountMinor <= 0) return@withContext SaveResult.Error("Enter an amount greater than zero.")
         val loanId = txn.loanId ?: return@withContext SaveResult.Error("Choose a loan.")
         checkDate(txn.timestamp)?.let { return@withContext SaveResult.Error(it) }
+        if (txn.type == TxnType.LOAN_REPAYMENT) {
+            val before = if (txn.id != 0L) dao.txn(txn.id)?.accountId else null
+            if (txn.id == 0L || before != txn.accountId) checkAccount(txn.accountId, "the account you paid from")?.let { return@withContext SaveResult.Error(it) }
+        }
         try {
             db.withTransaction {
                 val loan = dao.loan(loanId) ?: return@withTransaction SaveResult.Error("This loan no longer exists.")
@@ -249,6 +300,50 @@ class Repository(
         }
     }
 
+    /** Moves money between two accounts. Total balance is unchanged. */
+    suspend fun saveTransfer(txn: Txn): SaveResult = withContext(Dispatchers.IO) {
+        require(txn.type == TxnType.TRANSFER)
+        if (txn.amountMinor <= 0) return@withContext SaveResult.Error("Enter an amount greater than zero.")
+        if (txn.accountId == null || txn.toAccountId == null) return@withContext SaveResult.Error("Choose both accounts.")
+        if (txn.accountId == txn.toAccountId) return@withContext SaveResult.Error("Choose two different accounts.")
+        checkDate(txn.timestamp)?.let { return@withContext SaveResult.Error(it) }
+        val before = if (txn.id != 0L) dao.txn(txn.id) else null
+        if (before?.accountId != txn.accountId) checkAccount(txn.accountId, "the account to move money from")?.let { return@withContext SaveResult.Error(it) }
+        if (before?.toAccountId != txn.toAccountId) checkAccount(txn.toAccountId, "the account to move money to")?.let { return@withContext SaveResult.Error(it) }
+        try {
+            val id = db.withTransaction {
+                if (txn.id == 0L) dao.txnByRequest(txn.requestId)?.id ?: dao.insertTxn(txn)
+                else { dao.updateTxn(txn); txn.id }
+            }
+            SaveResult.Ok(id)
+        } catch (e: Exception) {
+            SaveResult.Error("Couldn't save: ${e.message ?: "unknown error"}. Your entry is still here; try again.")
+        }
+    }
+
+    suspend fun addAccount(name: String, kind: AccountKind, openingMinor: Long): SaveResult = withContext(Dispatchers.IO) {
+        val n = name.trim()
+        if (n.isEmpty()) return@withContext SaveResult.Error("Enter a name.")
+        val all = dao.allAccounts()
+        if (all.any { it.name.equals(n, ignoreCase = true) }) return@withContext SaveResult.Error("An account with this name already exists.")
+        SaveResult.Ok(dao.insertAccount(Account(name = n, kind = kind, openingMinor = openingMinor, sortOrder = (all.maxOfOrNull { it.sortOrder } ?: 0) + 1)))
+    }
+
+    suspend fun updateAccount(a: Account): SaveResult = withContext(Dispatchers.IO) {
+        val n = a.name.trim()
+        if (n.isEmpty()) return@withContext SaveResult.Error("Enter a name.")
+        if (dao.allAccounts().any { it.id != a.id && it.name.equals(n, ignoreCase = true) }) return@withContext SaveResult.Error("An account with this name already exists.")
+        if (a.archived && dao.allAccounts().count { !it.archived && it.id != a.id } == 0) return@withContext SaveResult.Error("Keep at least one active account.")
+        dao.updateAccount(a.copy(name = n)); SaveResult.Ok(a.id)
+    }
+
+    /** Deletes an account only if nothing uses it; otherwise it should be archived. */
+    suspend fun deleteAccount(a: Account): SaveResult = withContext(Dispatchers.IO) {
+        if (dao.accountUseCount(a.id) > 0) return@withContext SaveResult.Error("This account has entries, so it can't be deleted. Archive it instead to hide it.")
+        if (dao.allAccounts().count { !it.archived && it.id != a.id } == 0) return@withContext SaveResult.Error("Keep at least one active account.")
+        dao.deleteAccount(a); SaveResult.Ok(a.id)
+    }
+
     suspend fun txn(id: Long): Txn? = withContext(Dispatchers.IO) { dao.txn(id) }
     suspend fun loan(id: Long): Loan? = withContext(Dispatchers.IO) { dao.loan(id) }
 
@@ -285,6 +380,13 @@ class Repository(
         val ms = LocalDate.ofEpochDay(newStartEpochDay).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         dao.allTxns().none { it.timestamp < ms }
     }
+}
+
+object DefaultAccounts {
+    val all: List<Account> = listOf(
+        Account(id = AppDatabase.CASH_ID, name = "Cash", kind = AccountKind.CASH, sortOrder = 1),
+        Account(id = AppDatabase.BANK_ID, name = "Bank", kind = AccountKind.BANK, sortOrder = 2),
+    )
 }
 
 object DefaultCategories {

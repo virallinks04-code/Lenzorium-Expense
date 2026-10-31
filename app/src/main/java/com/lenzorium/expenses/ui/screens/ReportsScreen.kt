@@ -80,8 +80,8 @@ fun ReportsScreen(state: LedgerState, repo: Repository) {
     val period = if (kind == PeriodKind.CUSTOM) Period(kind, LocalDate.ofEpochDay(startDay), LocalDate.ofEpochDay(endDay))
     else Period.of(kind, LocalDate.ofEpochDay(startDay))
 
-    val report = remember(period, state.txns, state.loans, state.categories, state.settings.openingBalanceMinor) {
-        ReportBuilder.build(period, state.settings.openingBalanceMinor, state.txns, state.loans, state.categories)
+    val report = remember(period, state.txns, state.loans, state.categories, state.accounts) {
+        ReportBuilder.build(period, state.totalOpening, state.txns, state.loans, state.categories, accounts = state.accounts)
     }
     fun setPeriod(p: Period) { kindName = p.kind.name; startDay = p.start.toEpochDay(); endDay = p.endInclusive.toEpochDay() }
 
@@ -147,6 +147,10 @@ fun ReportsScreen(state: LedgerState, repo: Repository) {
                         KV("− Loan repayments", Money.format(report.totals.repayments, c))
                         HorizontalDivider(Modifier.padding(vertical = 6.dp))
                         KV("Closing (end of ${com.lenzorium.expenses.ui.components.Dates.short(period.endInclusive)})", Money.format(report.closingBalance, c), bold = true)
+                        if (report.accountClosing.size > 1) {
+                            Spacer(Modifier.height(4.dp))
+                            report.accountClosing.forEach { (name, v) -> KV("   $name", Money.format(v, c)) }
+                        }
                     }
                 }
             }
