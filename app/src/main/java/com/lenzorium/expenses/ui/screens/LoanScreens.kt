@@ -115,7 +115,7 @@ fun LoansScreen(state: LedgerState, nav: NavController) {
         LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StatTile("Outstanding debt · now", Money.format(state.debt, c), Modifier.weight(1f), valueColor = m.loan)
+                    StatTile("Outstanding debt", Money.format(state.debt, c), Modifier.weight(1f), valueColor = m.loan)
                     StatTile("Repaid so far", Money.format(state.loanSummaries.sumOf { it.repaid }, c), Modifier.weight(1f))
                 }
             }
@@ -129,7 +129,7 @@ fun LoansScreen(state: LedgerState, nav: NavController) {
                     }
                 }
                 TextButton(onClick = { nav.navigate(Routes.loanForm(existing = true)) }) {
-                    Text("Add a loan I already had (doesn't change balance)")
+                    Text("+ Add a loan you already had")
                 }
             }
             if (state.loans.isEmpty()) {
@@ -170,17 +170,28 @@ private fun LoanCard(s: LoanSummary, state: LedgerState, nav: NavController) {
                 }
                 StatusPill(s)
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    Money.format(s.outstanding, c),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = if (s.outstanding > 0) m.loan else m.income,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(if (s.outstanding > 0) "owed" else "settled", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 2.dp))
+            }
+            Spacer(Modifier.height(10.dp))
             val total = (s.borrowed + s.charges).coerceAtLeast(1)
             Box(Modifier.fillMaxWidth().height(8.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(4.dp))) {
                 Box(Modifier.fillMaxWidth((s.repaid.toFloat() / total).coerceIn(0f, 1f)).fillMaxHeight().background(m.income, RoundedCornerShape(4.dp)))
             }
-            Spacer(Modifier.height(10.dp))
-            Row {
-                Amount("Borrowed", Money.format(s.borrowed + s.charges, c), Modifier.weight(1f))
-                Amount("Repaid", Money.format(s.repaid, c), Modifier.weight(1f))
-                Amount("Owed", Money.format(s.outstanding, c), Modifier.weight(1f), bold = true)
-            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "${Money.format(s.repaid, c)} repaid of ${Money.format(s.borrowed + s.charges, c)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             s.loan.dueEpochDay?.let { due ->
                 if (s.outstanding > 0) {
                     Spacer(Modifier.height(8.dp))
@@ -293,7 +304,7 @@ fun LoanDetailScreen(state: LedgerState, repo: Repository, loanId: Long, nav: Na
                         Icon(Icons.Rounded.Payments, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Repay")
                     }
                     OutlinedButton(onClick = { nav.navigate(Routes.charge(loanId)) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Rounded.RequestQuote, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Add fee/interest")
+                        Icon(Icons.Rounded.RequestQuote, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Add charge")
                     }
                 }
             }

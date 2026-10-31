@@ -214,7 +214,7 @@ fun ReportsScreen(state: LedgerState, repo: Repository) {
                         } else {
                             Row {
                                 Text("Lender", Modifier.weight(1.3f), style = MaterialTheme.typography.labelMedium)
-                                Text("As of period end", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.End)
+                                Text("Period end", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.End)
                                 Text("Current", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.End)
                             }
                             report.lenders.forEach { l ->

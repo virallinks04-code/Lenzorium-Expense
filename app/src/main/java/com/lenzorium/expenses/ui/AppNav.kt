@@ -57,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -215,7 +216,12 @@ internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String 
                                     Icon(t.icon, null)
                                 }
                             },
-                            label = { Text(t.label, maxLines = 1) },
+                            label = {
+                                Text(
+                                    t.label, maxLines = 1, softWrap = false,
+                                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp, letterSpacing = 0.sp),
+                                )
+                            },
                         )
                     }
                 }

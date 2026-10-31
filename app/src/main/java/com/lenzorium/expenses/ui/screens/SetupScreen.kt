@@ -179,7 +179,7 @@ private fun StepHeader(title: String, subtitle: String) {
 @Composable
 private fun Welcome(onRestore: () -> Unit) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        IconBadge(Icons.Rounded.AccountBalanceWallet, MaterialTheme.colorScheme.primary, size = 88)
+        com.lenzorium.expenses.ui.components.BrandMark(96)
         Spacer(Modifier.height(20.dp))
         Text("Lenzorium Expenses", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(8.dp))

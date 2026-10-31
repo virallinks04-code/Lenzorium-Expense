@@ -94,10 +94,7 @@ fun LockScreen(settings: SettingsStore, onUnlocked: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Box(
-                Modifier.size(64.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp)),
-                contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Rounded.Lock, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(30.dp)) }
+            com.lenzorium.expenses.ui.components.BrandMark(72)
             Spacer(Modifier.height(16.dp))
             Text("Lenzorium Expenses", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(4.dp))
