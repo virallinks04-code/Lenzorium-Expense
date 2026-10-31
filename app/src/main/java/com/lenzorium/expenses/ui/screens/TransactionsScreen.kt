@@ -32,6 +32,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -114,13 +118,20 @@ fun TransactionsScreen(state: LedgerState, nav: NavController) {
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            OutlinedTextField(
+            TextField(
                 value = f.query,
                 onValueChange = { f.query = it },
-                placeholder = { Text("Search merchant, source, lender, notes") },
+                placeholder = { Text("Search merchant, source, lender, notes", maxLines = 1) },
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 trailingIcon = { if (f.query.isNotEmpty()) IconButton(onClick = { f.query = "" }) { Icon(Icons.Rounded.Close, "Clear search") } },
                 singleLine = true,
+                shape = RoundedCornerShape(28.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                ),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             )
             Row(

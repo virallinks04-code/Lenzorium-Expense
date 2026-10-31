@@ -28,6 +28,9 @@ import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Payments
+import androidx.compose.material.icons.rounded.Policy
+import androidx.compose.material.icons.rounded.Shield
+import com.lenzorium.expenses.ui.PrivacyText
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.AlertDialog
@@ -162,28 +165,48 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
                 )
             }
-            item { SectionTitle("About") }
+            item { SectionTitle("Your data") }
             item {
                 SectionCard {
-                    Column(Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Info, null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(12.dp))
-                            Text("Lenzorium Expenses ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleSmall)
-                        }
-                        Spacer(Modifier.padding(4.dp))
-                        Text(
-                            "Works fully offline; your data never leaves this phone unless you export or back it up. " +
-                                "Cash, bank and card are labels for how you paid — they aren't separate account balances, and credit card limits or card debt aren't tracked.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    Column {
+                        SettingRow(Icons.Rounded.Shield, "How your data is kept safe", "Stored on this phone · Google backup · backup files") { dialog = "data" }
+                        HorizontalDivider()
+                        SettingRow(Icons.Rounded.Policy, "Privacy policy", "No account, no ads, no tracking") { dialog = "privacy" }
                     }
+                }
+            }
+            item {
+                Column(
+                    Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(Icons.Rounded.AccountBalanceWallet, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.padding(2.dp))
+                    Text("Lenzorium Expenses", style = MaterialTheme.typography.titleSmall)
+                    Text("Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.padding(4.dp))
+                    Text(
+                        "Cash, bank and card are labels for how you paid, not separate account balances. Credit-card limits and card debt aren't tracked.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
                 }
             }
         }
     }
 
     when (dialog) {
+        "data" -> InfoDialog(
+            "How your data is kept safe",
+            listOf(
+                "Saved on this phone" to "Every entry is written to the app's private database the moment you tap Save. It stays after you close the app, restart the phone or install an update.",
+                "Google backup" to "If Android backup is on (Settings › Google › Backup), your records are included in your phone's encrypted Google backup and come back automatically when you sign in on a new phone and reinstall the app.",
+                "Backup file" to "Create full backup saves everything, including receipt photos, to one file you control. Keep a copy somewhere other than this phone, such as Google Drive.",
+                "When data is lost" to "Uninstalling the app or using \"Clear storage\" deletes the records on this phone. Restore them from Google backup or from your backup file.",
+            ),
+        ) { dialog = null }
+        "privacy" -> InfoDialog("Privacy policy", PrivacyText.sections, footer = "Last updated ${PrivacyText.UPDATED}") { dialog = null }
         "currency" -> CurrencyDialog(state, repo, onDone = { dialog = null })
         "opening" -> OpeningBalanceDialog(state, repo, onDone = { dialog = null })
         "start" -> DatePickDialog(
@@ -243,6 +266,26 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
         )
     }
     message?.let { (t, m) -> MessageDialog(t, m) { message = null } }
+}
+
+@Composable
+private fun InfoDialog(title: String, sections: List<Pair<String, String>>, footer: String? = null, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                sections.forEach { (h, b) ->
+                    Column {
+                        Text(h, style = MaterialTheme.typography.titleSmall)
+                        Text(b, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                footer?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline) }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
 }
 
 @Composable

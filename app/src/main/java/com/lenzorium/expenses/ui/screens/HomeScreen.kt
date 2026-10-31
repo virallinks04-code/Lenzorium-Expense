@@ -1,6 +1,16 @@
 package com.lenzorium.expenses.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -61,7 +71,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 @Composable
-fun HomeScreen(state: LedgerState, nav: NavController) {
+fun HomeScreen(state: LedgerState, nav: NavController, onToggleHide: () -> Unit = {}) {
     val c = state.currency
     val m = LocalMoneyColors.current
     val today = LocalDate.now()
@@ -82,42 +92,95 @@ fun HomeScreen(state: LedgerState, nav: NavController) {
 
     LazyColumn(modifier = Modifier.statusBarsPadding(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text("Lenzorium", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(greeting(), style = MaterialTheme.typography.headlineSmall)
                     Text(today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM")), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                TextButton(onClick = { nav.navigate(Routes.LOANS) }) {
+                FilledTonalButton(onClick = { nav.navigate(Routes.LOANS) }, contentPadding = PaddingValues(horizontal = 14.dp)) {
                     Icon(Icons.Rounded.AccountBalance, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Loans")
                 }
             }
         }
 
-        // Current balances
+        // Current balances (always "now" — monthly totals are shown separately below)
         item {
-            Column(
+            val hide = state.settings.hideAmounts
+            fun shown(v: Long) = if (hide) "${c.code} ••••••" else Money.format(v, c)
+            Box(
                 Modifier
                     .fillMaxWidth()
-                    .background(Brush.linearGradient(listOf(m.heroStart, m.heroEnd)), MaterialTheme.shapes.large)
-                    .padding(20.dp)
-            ) {
-                Text("AVAILABLE BALANCE · NOW", style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f))
-                Spacer(Modifier.height(4.dp))
-                Text(Money.format(state.available, c), style = MaterialTheme.typography.displaySmall, color = m.onHero)
-                if (state.available < 0) {
-                    Text("Your balance is negative", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFD180))
-                }
-                Spacer(Modifier.height(16.dp))
-                Row {
-                    Column(Modifier.weight(1f).clickable { nav.navigate(Routes.LOANS) }) {
-                        Text("Outstanding debt", style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f))
-                        Text(Money.format(state.debt, c), style = MaterialTheme.typography.titleMedium, color = m.onHero)
+                    .clip(MaterialTheme.shapes.large)
+                    .background(Brush.linearGradient(listOf(m.heroStart, m.heroEnd)))
+                    .drawBehind {
+                        drawCircle(Color.White.copy(alpha = 0.06f), radius = size.width * 0.45f, center = Offset(size.width * 0.95f, size.height * 0.05f))
+                        drawCircle(Color.White.copy(alpha = 0.05f), radius = size.width * 0.25f, center = Offset(size.width * 0.05f, size.height * 1.05f))
                     }
-                    if (state.settings.showAfterDebt) {
-                        Column(Modifier.weight(1f)) {
-                            Text("After clearing debt", style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f))
-                            Text(Money.format(state.afterDebt, c), style = MaterialTheme.typography.titleMedium, color = m.onHero)
+            ) {
+                Column(Modifier.padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 20.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Available balance", style = MaterialTheme.typography.labelLarge, color = m.onHero.copy(alpha = 0.85f), modifier = Modifier.weight(1f))
+                        IconButton(onClick = onToggleHide) {
+                            Icon(if (hide) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, if (hide) "Show amounts" else "Hide amounts", tint = m.onHero.copy(alpha = 0.85f))
                         }
+                    }
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(
+                            (if (state.available < 0 && !hide) "−" else "") + c.code,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = m.onHero.copy(alpha = 0.85f),
+                            modifier = Modifier.padding(bottom = 6.dp, end = 8.dp),
+                        )
+                        Text(
+                            if (hide) "••••••" else Money.number(kotlin.math.abs(state.available), c.decimals),
+                            style = MaterialTheme.typography.displaySmall,
+                            color = m.onHero,
+                            maxLines = 1,
+                        )
+                    }
+                    if (state.available < 0 && !hide) {
+                        Text("Your balance is negative", style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFD180))
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        Modifier
+                            .padding(end = 12.dp)
+                            .fillMaxWidth()
+                            .background(Color.White.copy(alpha = 0.10f), MaterialTheme.shapes.medium)
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Column(Modifier.weight(1f).clickable { nav.navigate(Routes.LOANS) }) {
+                            Text("Outstanding debt", style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f))
+                            Text(shown(state.debt), style = MaterialTheme.typography.titleSmall, color = m.onHero, maxLines = 1)
+                        }
+                        if (state.settings.showAfterDebt) {
+                            Column(Modifier.weight(1f)) {
+                                Text("After clearing debt", style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f))
+                                Text(shown(state.afterDebt), style = MaterialTheme.typography.titleSmall, color = m.onHero, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Gentle reminder to keep an off-phone backup
+        val needsBackup = state.txns.size >= 5 &&
+            System.currentTimeMillis() - state.settings.lastBackupAt > 30L * 24 * 60 * 60 * 1000
+        if (needsBackup) {
+            item {
+                SectionCard(Modifier.clickable { nav.goTab(Routes.SETTINGS) }) {
+                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconBadge(Icons.Rounded.CloudUpload, MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Back up your records", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                if (state.settings.lastBackupAt == 0L) "You haven't saved a backup file yet." else "Last backup ${Dates.date(state.settings.lastBackupAt)}.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
                     }
                 }
             }
@@ -238,6 +301,12 @@ fun HomeScreen(state: LedgerState, nav: NavController) {
         }
         item { Spacer(Modifier.height(8.dp)) }
     }
+}
+
+private fun greeting(): String = when (java.time.LocalTime.now().hour) {
+    in 5..11 -> "Good morning"
+    in 12..16 -> "Good afternoon"
+    else -> "Good evening"
 }
 
 @Composable

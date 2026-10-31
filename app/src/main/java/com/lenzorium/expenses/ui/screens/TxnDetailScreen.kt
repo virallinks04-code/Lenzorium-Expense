@@ -66,6 +66,7 @@ fun TxnDetailScreen(state: LedgerState, repo: Repository, id: Long, nav: NavCont
     val cat = t.categoryId?.let { state.categoryById[it] }
     val loan = t.loanId?.let { state.loanById[it] }
     val scope = rememberCoroutineScope()
+    val messenger = com.lenzorium.expenses.ui.LocalMessenger.current
     var confirmDelete by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showReceipt by remember { mutableStateOf(false) }
@@ -154,10 +155,11 @@ fun TxnDetailScreen(state: LedgerState, repo: Repository, id: Long, nav: NavCont
             destructive = true,
             onConfirm = {
                 confirmDelete = false
+                val deleted = t
                 scope.launch {
-                    when (val r = repo.deleteTxn(t.id)) {
+                    when (val r = repo.deleteTxn(deleted.id)) {
                         is SaveResult.Error -> error = r.message
-                        is SaveResult.Ok -> Unit // screen closes when the entry disappears
+                        is SaveResult.Ok -> messenger.show("${deleted.type.label} deleted", "Undo") { repo.restoreTxn(deleted) }
                     }
                 }
             },

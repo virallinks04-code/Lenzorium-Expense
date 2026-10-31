@@ -93,6 +93,13 @@ import com.lenzorium.expenses.ui.components.TextInput
 import com.lenzorium.expenses.ui.components.TxnRow
 import com.lenzorium.expenses.ui.simpleFactory
 import com.lenzorium.expenses.ui.theme.LocalMoneyColors
+import androidx.compose.ui.platform.LocalView
+import com.lenzorium.expenses.ui.LocalMessenger
+import com.lenzorium.expenses.ui.confirmHaptic
+import com.lenzorium.expenses.ui.components.FormSaveBar
+import com.lenzorium.expenses.ui.components.FormSection
+import com.lenzorium.expenses.ui.components.HeroAmountInput
+import com.lenzorium.expenses.ui.components.rememberDiscardGuard
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.UUID
@@ -231,6 +238,7 @@ fun LoanDetailScreen(state: LedgerState, repo: Repository, loanId: Long, nav: Na
     val m = LocalMoneyColors.current
     val scope = rememberCoroutineScope()
     val history = state.txns.filter { it.loanId == loanId }
+    val messenger = LocalMessenger.current
     var confirmDelete by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -325,9 +333,13 @@ fun LoanDetailScreen(state: LedgerState, repo: Repository, loanId: Long, nav: Na
             onConfirm = {
                 confirmDelete = false
                 scope.launch {
+                    val snapshot = repo.loanSnapshot(loanId)
                     when (val r = repo.deleteLoan(loanId)) {
                         is SaveResult.Error -> error = r.message
-                        is SaveResult.Ok -> nav.popBackStack()
+                        is SaveResult.Ok -> {
+                            snapshot?.let { (l, h) -> messenger.show("Loan from ${l.lender} deleted", "Undo") { repo.restoreLoan(l, h) } }
+                            nav.popBackStack()
+                        }
                     }
                 }
             },
@@ -357,6 +369,11 @@ class LoanFormViewModel(private val repo: Repository, private val editId: Long, 
     private val requestId = UUID.randomUUID().toString()
     val isEdit get() = editId != 0L
 
+    private fun snapshot() = listOf(lender, title, amount, receivedAt, dueEpochDay, notes, method).toString()
+    private var initial: String? = if (editId == 0L) snapshot() else null
+    val dirty: Boolean get() = loaded && savedId == null && initial != null && snapshot() != initial
+    fun markClean() { initial = snapshot() }
+
     init {
         if (editId != 0L) viewModelScope.launch {
             repo.loan(editId)?.let { l ->
@@ -365,6 +382,7 @@ class LoanFormViewModel(private val repo: Repository, private val editId: Long, 
                 amount = Money.toInput(l.principalMinor, repo.settings.current.currency.decimals)
                 receivedAt = l.receivedAt; dueEpochDay = l.dueEpochDay; isOpening = l.isOpening
             }
+            initial = snapshot()
             loaded = true
         }
     }
@@ -413,53 +431,74 @@ fun LoanFormScreen(repo: Repository, state: LedgerState, editId: Long, existing:
     val vm: LoanFormViewModel = viewModel(factory = simpleFactory { LoanFormViewModel(repo, editId, existing) })
     val c = state.currency
     var pickDue by remember { mutableStateOf(false) }
-    LaunchedEffect(vm.savedId) { if (vm.savedId != null) nav.popBackStack() }
+    val messenger = LocalMessenger.current
+    val view = LocalView.current
+    LaunchedEffect(vm.savedId) {
+        if (vm.savedId != null) {
+            view.confirmHaptic()
+            messenger.show(if (vm.isEdit) "Loan updated" else "Loan from ${vm.lender.trim()} saved")
+            nav.popBackStack()
+        }
+    }
     LaunchedEffect(vm.loaded) {
         // Pre-fill the payment method from the linked "received" entry when editing.
-        if (vm.loaded && vm.isEdit) state.txns.firstOrNull { it.loanId == editId && it.type == TxnType.LOAN_RECEIVED }?.paymentMethod?.let { vm.method = it }
+        if (vm.loaded && vm.isEdit) {
+            state.txns.firstOrNull { it.loanId == editId && it.type == TxnType.LOAN_RECEIVED }?.paymentMethod?.let { vm.method = it }
+            vm.markClean()
+        }
     }
+    val back = rememberDiscardGuard(vm.dirty) { nav.popBackStack() }
     val title = when {
-        vm.isEdit -> "Edit loan"
-        vm.isOpening -> "Existing loan"
-        else -> "Take loan"
+        vm.isEdit -> "Edit Loan"
+        vm.isOpening -> "Existing Loan"
+        else -> "Take Loan"
     }
-    ScreenScaffold(title, nav) { padding ->
+    ScreenScaffold(
+        title, nav, onBack = back,
+        bottomBar = { if (vm.loaded) FormSaveBar(if (vm.isEdit) "Save changes" else "Save loan", vm.saving) { vm.save(state.available, false) } },
+    ) { padding ->
         if (!vm.loaded) { CircularProgressIndicator(Modifier.padding(padding).padding(24.dp)); return@ScreenScaffold }
         Column(
-            Modifier.padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            HeroAmountInput(
+                vm.amount, { vm.amount = it }, c, LocalMoneyColors.current.loan,
+                label = if (vm.isOpening) "Amount still owed" else "Amount received",
+                modifier = Modifier.padding(vertical = 12.dp),
+            )
             if (vm.isOpening) {
                 InfoNote("An existing loan adds to your outstanding debt only. Your available balance doesn't change, because that money is already part of it.")
             } else if (!vm.isEdit) {
                 InfoNote("Borrowed money is added to your available balance and to your debt. It is not counted as income.")
             }
-            TextInput(vm.lender, { vm.lender = it }, "Lender's name")
-            val lenders = state.loans.map { it.lender }.distinct().filter { it != vm.lender }.take(6)
-            if (lenders.isNotEmpty() && !vm.isEdit) {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    lenders.forEach { l -> SuggestionChip(onClick = { vm.lender = l }, label = { Text(l) }) }
+            FormSection {
+                TextInput(vm.lender, { vm.lender = it }, "Lender's name")
+                val lenders = state.loans.map { it.lender }.distinct().filter { it != vm.lender }.take(6)
+                if (lenders.isNotEmpty() && !vm.isEdit) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        lenders.forEach { l -> SuggestionChip(onClick = { vm.lender = l }, label = { Text(l) }) }
+                    }
                 }
+                TextInput(vm.title, { vm.title = it }, "Loan title or reference", placeholder = "e.g. Car repair loan")
             }
-            TextInput(vm.title, { vm.title = it }, "Loan title or reference (optional)", placeholder = "e.g. Car repair loan")
-            AmountField(vm.amount, { vm.amount = it }, c, label = if (vm.isOpening) "Amount still owed" else "Amount received")
-            if (!vm.isOpening) {
-                DateTimeField(vm.receivedAt, { vm.receivedAt = it }, minDate = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay), label = "Date received")
-                PayMethodSelector(vm.method, { vm.method = it })
-            }
-            Column {
-                Text("Due date (optional)", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = { pickDue = true }) { Text(vm.dueEpochDay?.let { Dates.epochDay(it) } ?: "Set due date") }
-                    if (vm.dueEpochDay != null) IconButton(onClick = { vm.dueEpochDay = null }) { Icon(Icons.Rounded.Close, "Clear due date") }
+            FormSection {
+                if (!vm.isOpening) {
+                    DateTimeField(vm.receivedAt, { vm.receivedAt = it }, minDate = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay), label = "Date received")
+                    PayMethodSelector(vm.method, { vm.method = it })
                 }
+                Column {
+                    Text("Due date", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(onClick = { pickDue = true }) { Text(vm.dueEpochDay?.let { Dates.epochDay(it) } ?: "Set due date (optional)") }
+                        if (vm.dueEpochDay != null) IconButton(onClick = { vm.dueEpochDay = null }) { Icon(Icons.Rounded.Close, "Clear due date") }
+                    }
+                }
+                TextInput(vm.notes, { vm.notes = it }, "Notes", singleLine = false)
             }
-            TextInput(vm.notes, { vm.notes = it }, "Notes (optional)", singleLine = false)
             ErrorBanner(vm.error)
-            Button(onClick = { vm.save(state.available, false) }, enabled = !vm.saving, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                if (vm.saving) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text(if (vm.isEdit) "Save changes" else "Save loan")
-            }
+            Spacer(Modifier.height(8.dp))
         }
     }
     if (pickDue) DatePickDialog(vm.dueEpochDay?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now().plusMonths(1), { vm.dueEpochDay = it.toEpochDay() }, { pickDue = false })
@@ -497,6 +536,10 @@ class LoanEventViewModel(private val repo: Repository, val type: TxnType, initia
     private val requestId = UUID.randomUUID().toString()
     val isEdit get() = editId != 0L
 
+    private fun snapshot() = listOf(loanId, amount, timestamp, method, notes).toString()
+    private var initial: String? = if (editId == 0L) snapshot() else null
+    val dirty: Boolean get() = loaded && !done && initial != null && snapshot() != initial
+
     init {
         if (editId != 0L) viewModelScope.launch {
             repo.txn(editId)?.let { t ->
@@ -507,6 +550,7 @@ class LoanEventViewModel(private val repo: Repository, val type: TxnType, initia
                 method = t.paymentMethod ?: PayMethod.CASH
                 notes = t.notes
             }
+            initial = snapshot()
             loaded = true
         }
     }
@@ -555,7 +599,24 @@ fun LoanEventScreen(repo: Repository, state: LedgerState, type: TxnType, loanId:
     val vm: LoanEventViewModel = viewModel(factory = simpleFactory { LoanEventViewModel(repo, type, loanId, editId) })
     val c = state.currency
     val isRepay = type == TxnType.LOAN_REPAYMENT
-    LaunchedEffect(vm.done) { if (vm.done) nav.popBackStack() }
+    val messenger = LocalMessenger.current
+    val view = LocalView.current
+    LaunchedEffect(vm.done) {
+        if (vm.done) {
+            view.confirmHaptic()
+            val left = vm.loanId?.let { state.summary(it) }
+            messenger.show(
+                when {
+                    vm.isEdit -> "Changes saved"
+                    !isRepay -> "Charge added to loan"
+                    left != null && left.outstanding <= 0 -> "Repayment saved · loan fully repaid"
+                    else -> "Repayment saved"
+                }
+            )
+            nav.popBackStack()
+        }
+    }
+    val back = rememberDiscardGuard(vm.dirty) { nav.popBackStack() }
 
     val selectable = state.loanSummaries.filter { it.outstanding > 0 || it.loan.id == vm.loanId }
     val selected = vm.loanId?.let { state.summary(it) }
@@ -564,9 +625,16 @@ fun LoanEventScreen(repo: Repository, state: LedgerState, type: TxnType, loanId:
         val o = vm.original
         s.outstanding + if (o != null && o.loanId == s.loan.id) (if (isRepay) o.amountMinor else -o.amountMinor) else 0L
     }
-    val title = (if (vm.isEdit) "Edit " else "") + if (isRepay) "Repay loan" else "Loan fee or interest"
+    val title = (if (vm.isEdit) "Edit " else "") + if (isRepay) "Repay Loan" else "Fee or Interest"
 
-    ScreenScaffold(title, nav) { padding ->
+    ScreenScaffold(
+        title, nav, onBack = back,
+        bottomBar = {
+            if (vm.loaded && selectable.isNotEmpty()) FormSaveBar(
+                if (vm.isEdit) "Save changes" else if (isRepay) "Save repayment" else "Add charge", vm.saving,
+            ) { vm.save(state.available, if (isRepay) owed else null, false) }
+        },
+    ) { padding ->
         if (!vm.loaded) { CircularProgressIndicator(Modifier.padding(padding).padding(24.dp)); return@ScreenScaffold }
         if (selectable.isEmpty()) {
             Column(Modifier.padding(padding)) {
@@ -577,34 +645,39 @@ fun LoanEventScreen(repo: Repository, state: LedgerState, type: TxnType, loanId:
             return@ScreenScaffold
         }
         Column(
-            Modifier.padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            if (!isRepay) InfoNote("Fees or interest you've agreed to pay increase what you owe on this loan. Your available balance only changes when you repay.")
-            LoanPicker(selectable, vm.loanId, c, enabled = !vm.isEdit) { vm.loanId = it }
-            if (owed != null) {
-                Text(
-                    "Still owed: ${Money.format(owed, c)}",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = LocalMoneyColors.current.loan,
-                )
-            }
-            AmountField(vm.amount, { vm.amount = it }, c, label = if (isRepay) "Repayment amount" else "Charge amount")
+            HeroAmountInput(
+                vm.amount, { vm.amount = it }, c, LocalMoneyColors.current.loan,
+                label = if (isRepay) "Repayment amount" else "Charge amount",
+                modifier = Modifier.padding(vertical = 12.dp),
+            )
             if (isRepay && owed != null && owed > 0) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
                     AssistChip(onClick = { vm.amount = Money.toInput(owed, c.decimals) }, label = { Text("Pay in full") })
                     if (owed >= 2) AssistChip(onClick = { vm.amount = Money.toInput(owed / 2, c.decimals) }, label = { Text("Half") })
                 }
             }
-            DateTimeField(vm.timestamp, { vm.timestamp = it }, minDate = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay), label = if (isRepay) "Payment date" else "Date")
-            if (isRepay) PayMethodSelector(vm.method, { vm.method = it })
-            TextInput(vm.notes, { vm.notes = it }, if (isRepay) "Notes (optional)" else "Description", singleLine = false, placeholder = if (isRepay) null else "e.g. Late fee, monthly interest")
-            if (isRepay) Text("Repayments reduce your balance and your debt. They are shown separately from everyday expenses.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            ErrorBanner(vm.error)
-            Button(onClick = { vm.save(state.available, if (isRepay) owed else null, false) }, enabled = !vm.saving, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                if (vm.saving) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                else Text(if (vm.isEdit) "Save changes" else if (isRepay) "Save repayment" else "Add charge")
+            if (!isRepay) InfoNote("Fees or interest you've agreed to pay increase what you owe on this loan. Your available balance only changes when you repay.")
+            FormSection {
+                LoanPicker(selectable, vm.loanId, c, enabled = !vm.isEdit) { vm.loanId = it }
+                if (owed != null) {
+                    Text(
+                        "Still owed: ${Money.format(owed, c)}",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = LocalMoneyColors.current.loan,
+                    )
+                }
             }
+            FormSection {
+                DateTimeField(vm.timestamp, { vm.timestamp = it }, minDate = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay), label = if (isRepay) "Payment date" else "Date")
+                if (isRepay) PayMethodSelector(vm.method, { vm.method = it })
+                TextInput(vm.notes, { vm.notes = it }, if (isRepay) "Notes" else "Description", singleLine = false, placeholder = if (isRepay) null else "e.g. Late fee, monthly interest")
+            }
+            if (isRepay) Text("Repayments reduce your balance and your debt. They're shown separately from everyday expenses.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ErrorBanner(vm.error)
+            Spacer(Modifier.height(8.dp))
         }
     }
     vm.confirmNegative?.let {

@@ -12,7 +12,7 @@ Already have a backup? Tap **I have a backup — restore it** on the welcome scr
 
 ## Home
 
-- **Available balance · now** — what you have today.
+- **Available balance** — what you have right now. Tap the eye icon to hide amounts when others can see your screen.
 - **Outstanding debt** — what you still owe across all loans (tap to open Loans).
 - **After clearing debt** — balance minus debt (can be hidden in Settings).
 - **This month** — today's expenses, this month's expenses and income, and loan repayments (shown separately — they are not expenses).
@@ -27,11 +27,11 @@ Tap **Add Expense** on Home, or the **Add** tab for all four options.
 - **Take loan** — lender, amount received, date, and an optional due date. It increases both your balance and your debt. It is not income.
 - **Repay loan** — choose the loan and the amount (**Pay in full** fills the remaining amount). Repayments lower your balance and your debt. You can't repay more than is owed.
 
-If saving would make your balance negative, the app asks you to confirm first.
+If saving would make your balance negative, the app asks you to confirm first. If you leave a form with unsaved changes, the app asks before discarding them.
 
 ## Transactions
 
-Everything in date order. Search by merchant, source, lender or notes, and filter by type, category, payment method or dates. Tap an entry to see details, edit, or delete it. Balances update immediately.
+Everything in date order. Search by merchant, source, lender or notes, and filter by type, category, payment method or dates. Tap an entry to see details, edit, or delete it. Balances update immediately, and **Undo** appears for a few seconds after a delete.
 
 A loan's *money received* entry can only be removed by deleting the loan itself (the app explains this), so loan history isn't lost by accident.
 
@@ -52,6 +52,14 @@ Choose **Day**, **Week**, **Month** or **Custom**, and use the arrows to move be
 - PIN lock and fingerprint/face unlock. The app re-locks after 30 seconds in the background.
 - **Create full backup** — one .zip file with all transactions, loans, categories, settings and receipt photos. Save it somewhere off the phone (e.g. Google Drive).
 - **Restore from backup** — replaces the data on this phone. The backup is fully checked first; if it can't be read, your current data is left untouched.
+
+## Is my data saved?
+
+Yes. Every entry is written to the phone's storage the moment you tap Save, and stays after you close the app, restart the phone or install an update. There are three layers of protection:
+
+1. **On the phone** — the app's private database.
+2. **Google backup** — if Android backup is on (Settings › Google › Backup), your records are included in your phone's encrypted Google backup and restored automatically when you reinstall on a new phone with the same Google account.
+3. **Your own backup file** — Settings › Create full backup. The Home screen reminds you if you haven't made one in 30 days.
 
 ## Good to know
 

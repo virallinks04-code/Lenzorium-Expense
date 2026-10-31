@@ -224,7 +224,7 @@ internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String 
     ) { padding ->
       CompositionLocalProvider(LocalMessenger provides messenger) {
         NavHost(nav, startDestination = startRoute, modifier = Modifier.padding(padding).consumeWindowInsets(padding)) {
-            composable(Routes.HOME) { HomeScreen(state, nav) }
+            composable(Routes.HOME) { HomeScreen(state, nav) { repo.settings.update { it.copy(hideAmounts = !it.hideAmounts) } } }
             composable(Routes.TXNS) { TransactionsScreen(state, nav) }
             composable(Routes.REPORTS) { ReportsScreen(state, repo) }
             composable(Routes.SETTINGS) { SettingsScreen(state, repo, nav) }
