@@ -121,7 +121,7 @@ fun TransactionsScreen(state: LedgerState, nav: NavController) {
             TextField(
                 value = f.query,
                 onValueChange = { f.query = it },
-                placeholder = { Text("Search merchant, source, lender, notes", maxLines = 1) },
+                placeholder = { Text("Search transactions", maxLines = 1) },
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 trailingIcon = { if (f.query.isNotEmpty()) IconButton(onClick = { f.query = "" }) { Icon(Icons.Rounded.Close, "Clear search") } },
                 singleLine = true,

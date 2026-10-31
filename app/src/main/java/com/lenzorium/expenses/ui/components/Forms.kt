@@ -145,10 +145,11 @@ private fun CategoryCell(
         Spacer(Modifier.height(4.dp))
         Text(
             name,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, lineHeight = 13.sp, letterSpacing = 0.sp),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = if (name.length > 11) 10.sp else 11.sp, letterSpacing = (-0.1).sp),
             color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            maxLines = 2,
+            maxLines = 1,
+            softWrap = false,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 1.dp),
