@@ -166,10 +166,12 @@ fun HomeScreen(state: LedgerState, nav: NavController, onDismissAccountsNotice: 
                                     .padding(horizontal = 12.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(accountIcon(a.kind), null, tint = m.onHero, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
                                 Column {
-                                    Text(a.name, style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f), maxLines = 1)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(accountIcon(a.kind), null, tint = m.onHero.copy(alpha = 0.8f), modifier = Modifier.size(14.dp))
+                                        Spacer(Modifier.width(5.dp))
+                                        Text(a.name, style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f), maxLines = 1)
+                                    }
                                     Text(
                                         if (hide) "••••" else Money.format(bal, c),
                                         style = MaterialTheme.typography.titleSmall,
