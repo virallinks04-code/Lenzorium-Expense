@@ -165,7 +165,7 @@ fun NavController.goTab(route: String) {
 }
 
 @Composable
-private fun MainShell(repo: Repository, state: LedgerState) {
+internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String = Routes.HOME) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
@@ -194,7 +194,7 @@ private fun MainShell(repo: Repository, state: LedgerState) {
             }
         },
     ) { padding ->
-        NavHost(nav, startDestination = Routes.HOME, modifier = Modifier.padding(padding).consumeWindowInsets(padding)) {
+        NavHost(nav, startDestination = startRoute, modifier = Modifier.padding(padding).consumeWindowInsets(padding)) {
             composable(Routes.HOME) { HomeScreen(state, nav) }
             composable(Routes.TXNS) { TransactionsScreen(state, nav) }
             composable(Routes.REPORTS) { ReportsScreen(state, repo) }

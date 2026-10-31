@@ -18,14 +18,15 @@ fun signingValue(env: String, key: String): String? =
 
 android {
     namespace = "com.lenzorium.expenses"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.lenzorium.expenses"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        targetSdk = 36
+        // Every CI build gets a higher version code, as Google Play requires for each upload.
+        versionCode = 100 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -67,6 +68,9 @@ android {
         compose = true
         buildConfig = true
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
@@ -92,6 +96,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.5")
     implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.core:core-splashscreen:1.0.1")
 
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
@@ -103,4 +108,13 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Screenshot tests (src/testDebug): render every screen on the JVM with Robolectric.
+    testImplementation(composeBom)
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.room:room-testing:2.6.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

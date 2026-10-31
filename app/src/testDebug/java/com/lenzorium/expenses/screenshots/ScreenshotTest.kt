@@ -1,0 +1,108 @@
+package com.lenzorium.expenses.screenshots
+
+import android.content.Context
+import android.graphics.Bitmap
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onRoot
+import androidx.navigation.NavController
+import androidx.navigation.compose.rememberNavController
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.lenzorium.expenses.data.AppDatabase
+import com.lenzorium.expenses.data.Repository
+import com.lenzorium.expenses.data.SettingsStore
+import com.lenzorium.expenses.data.ThemeMode
+import com.lenzorium.expenses.data.TxnType
+import com.lenzorium.expenses.ui.LedgerState
+import com.lenzorium.expenses.ui.MainShell
+import com.lenzorium.expenses.ui.Routes
+import com.lenzorium.expenses.ui.screens.CategoriesScreen
+import com.lenzorium.expenses.ui.screens.EntryScreen
+import com.lenzorium.expenses.ui.screens.LoanDetailScreen
+import com.lenzorium.expenses.ui.screens.LoanEventScreen
+import com.lenzorium.expenses.ui.screens.LoanFormScreen
+import com.lenzorium.expenses.ui.screens.LockScreen
+import com.lenzorium.expenses.ui.screens.SetupScreen
+import com.lenzorium.expenses.ui.screens.TxnDetailScreen
+import com.lenzorium.expenses.ui.theme.LenzoriumTheme
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.File
+
+/**
+ * Renders every screen to PNG (app/build/screenshots). Phone size 360×640dp at xxhdpi = 1080×1920,
+ * the 9:16 ratio Google Play accepts for store screenshots. "_full" variants are tall to show whole pages.
+ */
+@RunWith(AndroidJUnit4::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [35], qualifiers = "w360dp-h640dp-xxhdpi")
+class ScreenshotTest {
+    @get:Rule val rule = createComposeRule()
+    private lateinit var repo: Repository
+    private val s = SampleData.state
+
+    @Before
+    fun setUp() {
+        val ctx = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(ctx, AppDatabase::class.java).allowMainThreadQueries().build()
+        repo = Repository(ctx, db, SettingsStore(ctx))
+    }
+
+    private fun shot(name: String, dark: Boolean = false, content: @Composable (NavController) -> Unit) {
+        rule.setContent {
+            LenzoriumTheme(if (dark) ThemeMode.DARK else ThemeMode.LIGHT) {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    content(rememberNavController())
+                }
+            }
+        }
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(1500)
+        rule.waitForIdle()
+        val bmp = rule.onRoot().captureToImage().asAndroidBitmap()
+        val dir = File(System.getProperty("screenshot.dir") ?: "build/screenshots").apply { mkdirs() }
+        File(dir, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    private fun tab(name: String, route: String, dark: Boolean = false, state: LedgerState = s) =
+        shot(name, dark) { MainShell(repo, state, route) }
+
+    private val expenseId get() = s.txns.first { it.party == "Imtiaz Super Market" }.id
+
+    // Main tabs
+    @Test fun home() = tab("01_home", Routes.HOME)
+    @Test fun homeDark() = tab("01_home_dark", Routes.HOME, dark = true)
+    @Config(qualifiers = "w360dp-h1700dp-xxhdpi") @Test fun homeFull() = tab("01_home_full", Routes.HOME)
+    @Test fun homeEmpty() = tab("02_home_empty", Routes.HOME, state = SampleData.empty)
+    @Test fun transactions() = tab("03_transactions", Routes.TXNS)
+    @Test fun transactionsDark() = tab("03_transactions_dark", Routes.TXNS, dark = true)
+    @Test fun reports() = tab("04_reports", Routes.REPORTS)
+    @Config(qualifiers = "w360dp-h2600dp-xxhdpi") @Test fun reportsFull() = tab("04_reports_full", Routes.REPORTS)
+    @Config(qualifiers = "w360dp-h1500dp-xxhdpi") @Test fun settings() = tab("05_settings_full", Routes.SETTINGS)
+    @Test fun loans() = tab("06_loans", Routes.LOANS)
+    @Test fun loansDark() = tab("06_loans_dark", Routes.LOANS, dark = true)
+
+    // Detail and form screens
+    @Test fun loanDetail() = shot("07_loan_detail") { LoanDetailScreen(s, repo, 1, it) }
+    @Test fun txnDetail() = shot("08_txn_detail") { TxnDetailScreen(s, repo, expenseId, it) }
+    @Test fun addExpense() = shot("09_add_expense") { EntryScreen(repo, s, TxnType.EXPENSE, 0, it) }
+    @Test fun addExpenseDark() = shot("09_add_expense_dark", dark = true) { EntryScreen(repo, s, TxnType.EXPENSE, 0, it) }
+    @Test fun addIncome() = shot("10_add_income") { EntryScreen(repo, s, TxnType.INCOME, 0, it) }
+    @Test fun takeLoan() = shot("11_take_loan") { LoanFormScreen(repo, s, 0, false, it) }
+    @Test fun repayLoan() = shot("12_repay_loan") { LoanEventScreen(repo, s, TxnType.LOAN_REPAYMENT, 1, 0, it) }
+    @Test fun categories() = shot("13_categories") { CategoriesScreen(s, repo, it) }
+    @Test fun lock() = shot("14_lock") { LockScreen(repo.settings) {} }
+    @Test fun setup() = shot("15_setup_welcome") { SetupScreen(repo) {} }
+}

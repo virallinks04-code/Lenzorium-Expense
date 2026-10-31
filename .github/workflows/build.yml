@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       HAS_KEY: ${{ secrets.LENZORIUM_KEYSTORE_BASE64 != '' }}
     steps:
@@ -32,34 +32,49 @@ jobs:
           echo "LENZORIUM_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
           echo "LENZORIUM_KEY_ALIAS=lenzorium" >> "$GITHUB_ENV"
 
-      - name: Run calculation tests
-        run: ./gradlew --no-daemon testReleaseUnitTest
+      - name: Run calculation tests and render screenshots
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon testDebugUnitTest 2>&1 | tee test-log.txt
 
-      - name: Build release APK
+      - name: Build release APK and Play Store bundle
         env:
           LENZORIUM_KEYSTORE_PASSWORD: ${{ secrets.LENZORIUM_KEYSTORE_PASSWORD }}
           LENZORIUM_KEY_PASSWORD: ${{ secrets.LENZORIUM_KEYSTORE_PASSWORD }}
-        run: ./gradlew --no-daemon assembleRelease
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleRelease bundleRelease 2>&1 | tee build-log.txt
 
-      - name: Collect APK
+      - name: Collect outputs
         run: |
           mkdir -p out
-          SUFFIX=$([ "$HAS_KEY" = "true" ] && echo "" || echo "-TEST-unsigned-key")
-          cp app/build/outputs/apk/release/app-release.apk "out/LenzoriumExpenses-v1.0.0-build${{ github.run_number }}${SUFFIX}.apk"
+          SUFFIX=$([ "$HAS_KEY" = "true" ] && echo "" || echo "-TEST-key")
+          cp app/build/outputs/apk/release/app-release.apk "out/LenzoriumExpenses-build${{ github.run_number }}${SUFFIX}.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "out/LenzoriumExpenses-build${{ github.run_number }}${SUFFIX}.aab"
           ls -la out
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: LenzoriumExpenses-apk
-          path: out/*.apk
-
-      - name: Upload test reports
+      # Screenshots, logs and test reports go to the "ci-output" branch for review.
+      - name: Publish screenshots and logs
         if: always()
+        run: |
+          mkdir -p /tmp/ci/screens /tmp/ci/tests
+          cp app/build/screenshots/*.png /tmp/ci/screens/ 2>/dev/null || true
+          cp app/build/test-results/testDebugUnitTest/*.xml /tmp/ci/tests/ 2>/dev/null || true
+          cp test-log.txt build-log.txt /tmp/ci/ 2>/dev/null || true
+          echo "run ${{ github.run_number }} ${{ github.sha }} ${{ job.status }}" > /tmp/ci/RUN.txt
+          cd /tmp/ci
+          git init -q -b ci-output
+          git config user.name "ci"
+          git config user.email "ci@users.noreply.github.com"
+          git add -A
+          git commit -q -m "CI output for run ${{ github.run_number }}"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-output
+
+      - name: Upload outputs
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports
-          path: app/build/reports/tests/
+          name: LenzoriumExpenses
+          path: out/*
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -67,9 +82,10 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: Lenzorium Expenses build ${{ github.run_number }}${{ env.HAS_KEY != 'true' && ' (test key)' || '' }}
           body: |
-            Installable release APK. Download the .apk below on your Android phone and open it to install.
+            **.apk** — install directly on an Android phone.
+            **.aab** — upload this to Google Play Console.
             All calculation tests passed for this build.
-            ${{ env.HAS_KEY != 'true' && 'This build is signed with a temporary test key. Before switching to a build signed with the permanent key, make a backup in Settings, because the old app must be uninstalled first.' || '' }}
-          files: out/*.apk
+            ${{ env.HAS_KEY != 'true' && 'Signed with a temporary test key: not for Google Play. Add the signing secrets for a permanently signed build.' || '' }}
+          files: out/*
           prerelease: ${{ env.HAS_KEY != 'true' }}
           make_latest: ${{ env.HAS_KEY == 'true' }}
