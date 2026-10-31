@@ -7,7 +7,8 @@ An offline Android expense manager. Record daily spending and income, track mone
 - Kotlin + Jetpack Compose (Material 3), light and dark themes
 - Room (SQLite) database on the device — no account, no internet needed
 - Exact money arithmetic (amounts stored as whole minor units, e.g. paisa)
-- Minimum Android 8.0 (API 26)
+- Minimum Android 8.0 (API 26), targets Android 16 (API 36) as Google Play requires
+- Encrypted Google backup of the ledger and receipts (Android Auto Backup)
 
 ## Install the APK
 
@@ -19,7 +20,13 @@ Updates: install a newer APK over the old one. Your data is kept because every b
 
 ## Build it yourself
 
-Every push to `main` builds automatically on GitHub Actions (`.github/workflows/build.yml`): it runs the calculation tests, builds the signed release APK, and publishes it as a GitHub Release.
+Every push to `main` builds automatically on GitHub Actions (`.github/workflows/build.yml`): it runs the calculation tests, renders screenshots of every screen, builds the signed release **APK** (for direct install) and **AAB** (for Google Play), and publishes both as a GitHub Release. Screenshots and logs are pushed to the `ci-output` branch.
+
+## Google Play
+
+- Store listing text, content-rating and Data safety answers: `play/STORE_LISTING.md`
+- Graphics: `play/icon-512.png`, `play/feature-graphic.png`, `play/screenshots/`
+- Privacy policy: `PRIVACY.md`
 
 To build locally you need JDK 17 and the Android SDK (easiest: install Android Studio).
 
