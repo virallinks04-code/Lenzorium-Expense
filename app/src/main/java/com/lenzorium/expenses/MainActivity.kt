@@ -5,6 +5,7 @@ import android.os.SystemClock
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableStateOf
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentActivity
 import com.lenzorium.expenses.ui.AppRoot
 
@@ -16,6 +17,7 @@ class MainActivity : FragmentActivity() {
     private var stoppedAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (savedInstanceState == null) locked.value = repo.settings.current.lockEnabled

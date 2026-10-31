@@ -13,7 +13,10 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import com.lenzorium.expenses.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lenzorium.expenses.data.ThemeMode
@@ -85,18 +88,39 @@ private val DarkColors = darkColorScheme(
     error = Color(0xFFFFB4AB),
 )
 
+val Inter = FontFamily(
+    Font(R.font.inter_regular, FontWeight.Normal),
+    Font(R.font.inter_medium, FontWeight.Medium),
+    Font(R.font.inter_semibold, FontWeight.SemiBold),
+    Font(R.font.inter_bold, FontWeight.Bold),
+)
+
+/** Tabular figures so amounts line up in columns. */
+private fun style(size: Int, weight: FontWeight, line: Int, tracking: Double = 0.0) = TextStyle(
+    fontFamily = Inter,
+    fontSize = size.sp,
+    fontWeight = weight,
+    lineHeight = line.sp,
+    letterSpacing = tracking.sp,
+    fontFeatureSettings = "tnum",
+)
+
 private val AppTypography = Typography(
-    displaySmall = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
-    headlineMedium = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.Bold),
-    headlineSmall = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.SemiBold),
-    titleLarge = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
-    titleSmall = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 22.sp),
-    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
-    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 16.sp),
-    labelLarge = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
-    labelMedium = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium),
+    displayLarge = style(44, FontWeight.Bold, 52, -1.0),
+    displayMedium = style(38, FontWeight.Bold, 46, -0.8),
+    displaySmall = style(32, FontWeight.Bold, 40, -0.6),
+    headlineLarge = style(28, FontWeight.Bold, 36, -0.4),
+    headlineMedium = style(24, FontWeight.Bold, 32, -0.3),
+    headlineSmall = style(21, FontWeight.SemiBold, 28, -0.2),
+    titleLarge = style(19, FontWeight.SemiBold, 26, -0.1),
+    titleMedium = style(16, FontWeight.SemiBold, 22),
+    titleSmall = style(14, FontWeight.SemiBold, 20),
+    bodyLarge = style(16, FontWeight.Normal, 24),
+    bodyMedium = style(14, FontWeight.Normal, 20),
+    bodySmall = style(12, FontWeight.Normal, 16, 0.1),
+    labelLarge = style(14, FontWeight.SemiBold, 20, 0.1),
+    labelMedium = style(12, FontWeight.Medium, 16, 0.2),
+    labelSmall = style(11, FontWeight.Medium, 16, 0.4),
 )
 
 private val AppShapes = Shapes(

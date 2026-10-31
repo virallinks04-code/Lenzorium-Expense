@@ -47,7 +47,10 @@ class MainViewModel(val repo: Repository) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.Eagerly, LedgerState(settings = repo.settings.current))
 
     init {
-        viewModelScope.launch { repo.ensureDefaultCategories() }
+        viewModelScope.launch {
+            repo.ensureDefaultCategories()
+            repo.cleanOrphanReceipts()
+        }
     }
 
     companion object {

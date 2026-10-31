@@ -200,7 +200,6 @@ class Repository(
                     }
                 }
                 dao.deleteTxn(t)
-                t.receiptFile?.let { receiptFile(it).delete() }
                 SaveResult.Ok(id)
             }
         } catch (e: Exception) {
@@ -219,6 +218,34 @@ class Repository(
             }
         } catch (e: Exception) {
             SaveResult.Error("Couldn't delete: ${e.message ?: "unknown error"}")
+        }
+    }
+
+    /** Undo for [deleteTxn]: puts the exact record back (same id and receipt). */
+    suspend fun restoreTxn(t: Txn) = withContext(Dispatchers.IO) {
+        db.withTransaction { if (dao.txn(t.id) == null) dao.insertTxn(t) }
+    }
+
+    /** Everything needed to undo a loan deletion. */
+    suspend fun loanSnapshot(id: Long): Pair<Loan, List<Txn>>? = withContext(Dispatchers.IO) {
+        dao.loan(id)?.let { it to dao.txnsForLoan(id) }
+    }
+
+    suspend fun restoreLoan(loan: Loan, history: List<Txn>) = withContext(Dispatchers.IO) {
+        db.withTransaction {
+            if (dao.loan(loan.id) == null) {
+                dao.insertLoan(loan)
+                dao.insertTxns(history.filter { dao.txn(it.id) == null })
+            }
+        }
+    }
+
+    /** Removes receipt photos no record points to (abandoned forms, deletions older than a day). */
+    suspend fun cleanOrphanReceipts() = withContext(Dispatchers.IO) {
+        runCatching {
+            val used = dao.allTxns().mapNotNull { it.receiptFile }.toSet()
+            val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
+            receiptsDir.listFiles()?.forEach { f -> if (f.name !in used && f.lastModified() < cutoff) f.delete() }
         }
     }
 

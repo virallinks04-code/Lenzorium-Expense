@@ -23,6 +23,10 @@ data class AppSettings(
     val pinHash: String? = null,
     val pinSalt: String? = null,
     val biometricEnabled: Boolean = false,
+    /** Hide balance figures on Home until tapped. */
+    val hideAmounts: Boolean = false,
+    /** Epoch millis of the last full backup the user saved, or 0. */
+    val lastBackupAt: Long = 0L,
 ) {
     val currency: CurrencyInfo get() = Currencies.find(currencyCode)
     val lockEnabled: Boolean get() = pinHash != null
@@ -44,6 +48,8 @@ class SettingsStore(context: Context) {
         pinHash = prefs.getString(K_PIN_HASH, null),
         pinSalt = prefs.getString(K_PIN_SALT, null),
         biometricEnabled = prefs.getBoolean(K_BIO, false),
+        hideAmounts = prefs.getBoolean(K_HIDE, false),
+        lastBackupAt = prefs.getLong(K_LAST_BACKUP, 0L),
     )
 
     @Synchronized
@@ -60,6 +66,8 @@ class SettingsStore(context: Context) {
             .putString(K_PIN_HASH, s.pinHash)
             .putString(K_PIN_SALT, s.pinSalt)
             .putBoolean(K_BIO, s.biometricEnabled)
+            .putBoolean(K_HIDE, s.hideAmounts)
+            .putLong(K_LAST_BACKUP, s.lastBackupAt)
             .commit()
         _state.value = s
     }
@@ -87,6 +95,8 @@ class SettingsStore(context: Context) {
         private const val K_PIN_HASH = "pin_hash"
         private const val K_PIN_SALT = "pin_salt"
         private const val K_BIO = "biometric"
+        private const val K_HIDE = "hide_amounts"
+        private const val K_LAST_BACKUP = "last_backup"
 
         fun hash(pin: String, salt: String): String {
             // Iterated SHA-256; PIN never stored in plain text.

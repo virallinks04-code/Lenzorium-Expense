@@ -44,6 +44,7 @@ class BackupManager(private val context: Context, private val repo: Repository) 
                     }
                 }
             }
+            repo.settings.update { it.copy(lastBackupAt = System.currentTimeMillis()) }
             data.txns.size
         }
     }
@@ -97,7 +98,7 @@ class BackupManager(private val context: Context, private val repo: Repository) 
             }
             old.deleteRecursively()
 
-            repo.settings.update { data.settings.copy(setupDone = true) }
+            repo.settings.update { data.settings.copy(setupDone = true, lastBackupAt = System.currentTimeMillis()) }
             Result.success(data.txns.size)
         } catch (e: BackupFormatException) {
             Result.failure(e)

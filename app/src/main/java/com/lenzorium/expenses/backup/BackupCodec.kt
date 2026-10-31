@@ -42,6 +42,7 @@ object BackupCodec {
             put("pinHash", s.pinHash ?: JSONObject.NULL)
             put("pinSalt", s.pinSalt ?: JSONObject.NULL)
             put("biometricEnabled", s.biometricEnabled)
+            put("hideAmounts", s.hideAmounts)
         })
         root.put("categories", JSONArray().apply {
             d.categories.forEach { c ->
@@ -97,6 +98,7 @@ object BackupCodec {
                 pinHash = s.optStringOrNull("pinHash"),
                 pinSalt = s.optStringOrNull("pinSalt"),
                 biometricEnabled = s.optBoolean("biometricEnabled", false),
+                hideAmounts = s.optBoolean("hideAmounts", false),
             )
             val cats = root.getJSONArray("categories").let { a ->
                 (0 until a.length()).map { i ->

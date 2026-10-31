@@ -4,6 +4,16 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -171,9 +181,22 @@ internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String 
     val route = entry?.destination?.route
     val showBar = route in setOf(Routes.HOME, Routes.TXNS, Routes.REPORTS, Routes.SETTINGS)
     var addSheet by remember { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
+    val shellScope = rememberCoroutineScope()
+    val messenger = remember(snackbar, shellScope) { Messenger(snackbar, shellScope) }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = {
+            SnackbarHost(snackbar, modifier = if (showBar) Modifier else Modifier.navigationBarsPadding().imePadding()) { data ->
+                Snackbar(
+                    data,
+                    shape = MaterialTheme.shapes.medium,
+                    containerColor = MaterialTheme.colorScheme.inverseSurface,
+                    actionColor = MaterialTheme.colorScheme.inversePrimary,
+                )
+            }
+        },
         bottomBar = {
             if (showBar) {
                 NavigationBar {
@@ -182,10 +205,15 @@ internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String 
                             selected = route == t.route,
                             onClick = { if (t.route == "add") addSheet = true else nav.goTab(t.route) },
                             icon = {
-                                Icon(
-                                    t.icon, null,
-                                    tint = if (t.route == "add") MaterialTheme.colorScheme.primary else androidx.compose.material3.LocalContentColor.current,
-                                )
+                                if (t.route == "add") {
+                                    Box(
+                                        Modifier.size(width = 52.dp, height = 36.dp)
+                                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp)),
+                                        contentAlignment = Alignment.Center,
+                                    ) { Icon(Icons.Rounded.Add, "Add", tint = MaterialTheme.colorScheme.onPrimary) }
+                                } else {
+                                    Icon(t.icon, null)
+                                }
                             },
                             label = { Text(t.label, maxLines = 1) },
                         )
@@ -194,6 +222,7 @@ internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String 
             }
         },
     ) { padding ->
+      CompositionLocalProvider(LocalMessenger provides messenger) {
         NavHost(nav, startDestination = startRoute, modifier = Modifier.padding(padding).consumeWindowInsets(padding)) {
             composable(Routes.HOME) { HomeScreen(state, nav) }
             composable(Routes.TXNS) { TransactionsScreen(state, nav) }
@@ -239,14 +268,15 @@ internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String 
                 TxnDetailScreen(state, repo, e.arguments?.getLong("id") ?: 0L, nav)
             }
         }
+      }
     }
 
     if (addSheet) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(onDismissRequest = { addSheet = false }, sheetState = sheetState) {
+        ModalBottomSheet(onDismissRequest = { addSheet = false }, sheetState = sheetState, containerColor = MaterialTheme.colorScheme.surfaceContainerLowest) {
             val m = LocalMoneyColors.current
             Column(Modifier.navigationBarsPadding().padding(bottom = 16.dp)) {
-                Text("Add", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+                Text("What would you like to record?", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp))
                 AddOption(Icons.Rounded.RemoveCircle, m.expense, "Add Expense", "Record money you spent") { addSheet = false; nav.navigate(Routes.entry(TxnType.EXPENSE)) }
                 AddOption(Icons.Rounded.TrendingUp, m.income, "Add Income", "Salary, business, gifts and more") { addSheet = false; nav.navigate(Routes.entry(TxnType.INCOME)) }
                 AddOption(Icons.Rounded.AccountBalance, m.loan, "Take Loan", "Money you borrowed — adds to balance and debt") { addSheet = false; nav.navigate(Routes.loanForm()) }
@@ -262,11 +292,12 @@ private fun AddOption(icon: ImageVector, tint: Color, title: String, subtitle: S
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 24.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconBadge(icon, tint, size = 44)
+        IconBadge(icon, tint, size = 48)
         Spacer(Modifier.width(16.dp))
-        Column {
+        Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
     }
 }

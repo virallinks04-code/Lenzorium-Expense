@@ -68,6 +68,16 @@ import com.lenzorium.expenses.ui.components.PayMethodSelector
 import com.lenzorium.expenses.ui.components.ScreenScaffold
 import com.lenzorium.expenses.ui.components.TextInput
 import com.lenzorium.expenses.ui.simpleFactory
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalView
+import com.lenzorium.expenses.ui.LocalMessenger
+import com.lenzorium.expenses.ui.confirmHaptic
+import com.lenzorium.expenses.ui.components.CategoryGrid
+import com.lenzorium.expenses.ui.components.FormSaveBar
+import com.lenzorium.expenses.ui.components.FormSection
+import com.lenzorium.expenses.ui.components.HeroAmountInput
+import com.lenzorium.expenses.ui.components.rememberDiscardGuard
+import com.lenzorium.expenses.ui.theme.LocalMoneyColors
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.UUID
@@ -94,6 +104,10 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
 
     val isEdit get() = editId != 0L
 
+    private fun snapshot() = listOf(amount, categoryId, timestamp, party, method, notes, receipt).toString()
+    private var initial: String? = if (editId == 0L) snapshot() else null
+    val dirty: Boolean get() = loaded && !done && initial != null && snapshot() != initial
+
     init {
         if (editId != 0L) viewModelScope.launch {
             repo.txn(editId)?.let { t ->
@@ -108,6 +122,7 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
                 receipt = t.receiptFile
                 originalReceipt = t.receiptFile
             }
+            initial = snapshot()
             loaded = true
         }
     }
@@ -178,8 +193,19 @@ fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Lon
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     val focus = remember { FocusRequester() }
 
-    LaunchedEffect(vm.done) { if (vm.done) nav.popBackStack() }
+    val messenger = LocalMessenger.current
+    val view = LocalView.current
+    val accent = if (isExpense) LocalMoneyColors.current.expense else LocalMoneyColors.current.income
+    LaunchedEffect(vm.done) {
+        if (vm.done) {
+            view.confirmHaptic()
+            val amount = Money.parse(vm.amount, c.decimals)?.let { Money.format(it, c) } ?: ""
+            messenger.show(if (vm.isEdit) "Changes saved" else "${if (isExpense) "Expense" else "Income"} of $amount saved")
+            nav.popBackStack()
+        }
+    }
     LaunchedEffect(vm.loaded) { if (vm.loaded && !vm.isEdit) runCatching { focus.requestFocus() } }
+    val back = rememberDiscardGuard(vm.dirty) { nav.popBackStack() }
 
     fun importUri(uri: Uri?) {
         if (uri == null) return
@@ -194,65 +220,77 @@ fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Lon
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { importUri(it) }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) importUri(cameraUri) }
 
-    val title = (if (vm.isEdit) "Edit " else "Add ") + if (isExpense) "expense" else "income"
-    ScreenScaffold(title, nav) { padding ->
+    val title = (if (vm.isEdit) "Edit " else "Add ") + if (isExpense) "Expense" else "Income"
+    ScreenScaffold(
+        title, nav, onBack = back,
+        bottomBar = {
+            if (vm.loaded) FormSaveBar(
+                if (vm.isEdit) "Save changes" else if (isExpense) "Save expense" else "Save income",
+                saving = vm.saving, enabled = !importing,
+            ) { vm.save(state.available, confirmed = false) }
+        },
+    ) { padding ->
         if (!vm.loaded) {
             Box(Modifier.padding(padding).fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             return@ScreenScaffold
         }
         Column(
-            Modifier.padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            AmountField(vm.amount, { vm.amount = it }, c, modifier = Modifier.focusRequester(focus), isError = vm.error != null && Money.parse(vm.amount, c.decimals).let { it == null || it <= 0 })
-            CategoryPicker(cats, vm.categoryId, { vm.categoryId = it }, onAddCustom = { addCat = true })
-            TextInput(vm.party, { vm.party = it }, if (isExpense) "Merchant or place (optional)" else "Source (optional)", placeholder = if (isExpense) "e.g. Imtiaz, petrol pump, pharmacy" else "e.g. employer or client")
-            PayMethodSelector(vm.method, { vm.method = it })
-            DateTimeField(vm.timestamp, { vm.timestamp = it }, minDate = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay), showTime = true, label = "Date and time")
-            TextInput(vm.notes, { vm.notes = it }, "Notes (optional)", singleLine = false)
+            HeroAmountInput(
+                vm.amount, { vm.amount = it }, c, accent,
+                label = if (isExpense) "You spent" else "You received",
+                modifier = Modifier.focusRequester(focus).padding(vertical = 12.dp),
+                isError = vm.error != null && Money.parse(vm.amount, c.decimals).let { it == null || it <= 0 },
+            )
+            FormSection {
+                CategoryGrid(cats, vm.categoryId, { vm.categoryId = it }, onAddCustom = { addCat = true })
+            }
+            FormSection {
+                TextInput(vm.party, { vm.party = it }, if (isExpense) "Merchant or place" else "Source", placeholder = if (isExpense) "e.g. Imtiaz, petrol pump, pharmacy" else "e.g. employer or client")
+                PayMethodSelector(vm.method, { vm.method = it })
+                DateTimeField(vm.timestamp, { vm.timestamp = it }, minDate = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay), showTime = true, label = "Date and time")
+                TextInput(vm.notes, { vm.notes = it }, "Notes", singleLine = false)
+            }
 
             if (isExpense) {
-                Column {
-                    Text("Receipt (optional)", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(6.dp))
-                    val r = vm.receipt
-                    if (r != null) {
-                        Box {
-                            AsyncImage(
-                                model = repo.receiptFile(r),
-                                contentDescription = "Receipt photo",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(120.dp),
-                            )
-                            FilledTonalIconButton(onClick = { vm.replaceReceipt(null) }, modifier = Modifier.align(Alignment.TopEnd).size(32.dp)) {
-                                Icon(Icons.Rounded.Close, "Remove receipt", Modifier.size(18.dp))
+                FormSection {
+                    Column {
+                        Text("Receipt", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(8.dp))
+                        val r = vm.receipt
+                        if (r != null) {
+                            Box {
+                                AsyncImage(
+                                    model = repo.receiptFile(r),
+                                    contentDescription = "Receipt photo",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(120.dp).clip(MaterialTheme.shapes.medium),
+                                )
+                                FilledTonalIconButton(onClick = { vm.replaceReceipt(null) }, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(32.dp)) {
+                                    Icon(Icons.Rounded.Close, "Remove receipt", Modifier.size(18.dp))
+                                }
                             }
-                        }
-                    } else if (importing) {
-                        CircularProgressIndicator(Modifier.size(32.dp))
-                    } else {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = {
-                                val u = ReceiptImport.newCameraUri(context); cameraUri = u
-                                runCatching { camera.launch(u) }.onFailure { vm.error = "No camera app is available." }
-                            }) { Icon(Icons.Rounded.PhotoCamera, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Take photo") }
-                            OutlinedButton(onClick = {
-                                gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                            }) { Icon(Icons.Rounded.PhotoLibrary, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Choose") }
+                        } else if (importing) {
+                            CircularProgressIndicator(Modifier.size(32.dp))
+                        } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = {
+                                    val u = ReceiptImport.newCameraUri(context); cameraUri = u
+                                    runCatching { camera.launch(u) }.onFailure { vm.error = "No camera app is available." }
+                                }, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.PhotoCamera, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Camera") }
+                                OutlinedButton(onClick = {
+                                    gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                }, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.PhotoLibrary, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Gallery") }
+                            }
                         }
                     }
                 }
             }
 
             ErrorBanner(vm.error)
-            Button(
-                onClick = { vm.save(state.available, confirmed = false) },
-                enabled = !vm.saving && !importing,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) {
-                if (vm.saving) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                else Text(if (vm.isEdit) "Save changes" else if (isExpense) "Save expense" else "Save income")
-            }
+            Spacer(Modifier.height(8.dp))
         }
     }
 
