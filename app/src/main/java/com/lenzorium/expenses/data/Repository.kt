@@ -71,7 +71,8 @@ class Repository(
                 val cash = accs.firstOrNull { it.id == AppDatabase.CASH_ID } ?: accs.first()
                 dao.updateAccount(cash.copy(openingMinor = s.openingBalanceMinor))
             }
-            settings.update { it.copy(accountsMigrated = true, accountsNotice = notice || dao.allTxns().isNotEmpty()) }
+            val hasEntries = dao.allTxns().isNotEmpty()
+            settings.update { it.copy(accountsMigrated = true, accountsNotice = notice || hasEntries) }
         }
     }
 
