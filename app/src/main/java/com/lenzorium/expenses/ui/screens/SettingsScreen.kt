@@ -180,8 +180,8 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
                     Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Icon(Icons.Rounded.AccountBalanceWallet, null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.padding(2.dp))
+                    com.lenzorium.expenses.ui.components.BrandMark(48)
+                    Spacer(Modifier.padding(4.dp))
                     Text("Lenzorium Expenses", style = MaterialTheme.typography.titleSmall)
                     Text("Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.padding(4.dp))

@@ -181,7 +181,7 @@ private fun Welcome(onRestore: () -> Unit) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         com.lenzorium.expenses.ui.components.BrandMark(96)
         Spacer(Modifier.height(20.dp))
-        Text("Lenzorium Expenses", style = MaterialTheme.typography.headlineMedium)
+        com.lenzorium.expenses.ui.components.BrandWordmark()
         Spacer(Modifier.height(8.dp))
         Text(
             "Where did my money go, how much do I owe, and how much do I have left?",

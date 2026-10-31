@@ -96,7 +96,7 @@ fun LockScreen(settings: SettingsStore, onUnlocked: () -> Unit) {
         ) {
             com.lenzorium.expenses.ui.components.BrandMark(72)
             Spacer(Modifier.height(16.dp))
-            Text("Lenzorium Expenses", style = MaterialTheme.typography.titleLarge)
+            com.lenzorium.expenses.ui.components.BrandWordmark(large = false)
             Spacer(Modifier.height(4.dp))
             Text("Enter your PIN to continue", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(20.dp))

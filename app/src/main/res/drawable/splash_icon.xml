@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lenzorium logo centred inside the 240dp splash-icon area (160dp visible circle). -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:width="128dp" android:height="128dp" android:gravity="center" android:drawable="@drawable/brand_icon" />
+</layer-list>
