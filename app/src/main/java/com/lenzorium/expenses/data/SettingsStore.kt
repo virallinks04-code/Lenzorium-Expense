@@ -37,6 +37,11 @@ data class AppSettings(
     val budgetAlerts: Boolean = true,
     /** Home shows a monthly budget card (hidden until the user creates one). */
     val homeShowInsights: Boolean = true,
+    /** Folder chosen for automatic backups (a document-tree URI), or null when off. */
+    val autoBackupUri: String? = null,
+    /** Days between automatic backups (1 = daily, 7 = weekly). */
+    val autoBackupDays: Int = 7,
+    val autoBackupLast: Long = 0L,
 ) {
     val currency: CurrencyInfo get() = Currencies.find(currencyCode)
     val lockEnabled: Boolean get() = pinHash != null
@@ -65,6 +70,9 @@ class SettingsStore(context: Context) {
         remindersEnabled = prefs.getBoolean(K_REMINDERS, true),
         budgetAlerts = prefs.getBoolean(K_BUDGET_ALERTS, true),
         homeShowInsights = prefs.getBoolean(K_HOME_INSIGHTS, true),
+        autoBackupUri = prefs.getString(K_AUTO_URI, null),
+        autoBackupDays = prefs.getInt(K_AUTO_DAYS, 7),
+        autoBackupLast = prefs.getLong(K_AUTO_LAST, 0L),
     )
 
     @Synchronized
@@ -88,6 +96,9 @@ class SettingsStore(context: Context) {
             .putBoolean(K_REMINDERS, s.remindersEnabled)
             .putBoolean(K_BUDGET_ALERTS, s.budgetAlerts)
             .putBoolean(K_HOME_INSIGHTS, s.homeShowInsights)
+            .putString(K_AUTO_URI, s.autoBackupUri)
+            .putInt(K_AUTO_DAYS, s.autoBackupDays)
+            .putLong(K_AUTO_LAST, s.autoBackupLast)
             .commit()
         _state.value = s
     }
@@ -130,6 +141,9 @@ class SettingsStore(context: Context) {
         private const val K_REMINDERS = "reminders"
         private const val K_BUDGET_ALERTS = "budget_alerts"
         private const val K_HOME_INSIGHTS = "home_insights"
+        private const val K_AUTO_URI = "auto_backup_uri"
+        private const val K_AUTO_DAYS = "auto_backup_days"
+        private const val K_AUTO_LAST = "auto_backup_last"
 
         /** Small notification bookkeeping kept out of [AppSettings]. */
         const val K_ALERTED = "budget_alerted"

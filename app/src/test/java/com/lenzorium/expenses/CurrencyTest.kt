@@ -37,3 +37,30 @@ class CurrencyTest {
         assertEquals(0L, LedgerMath.cashDelta(t(5, TxnType.TRANSFER, 500, acc = 1, to = 3), foreign))
     }
 }
+
+class BackupCryptoTest {
+    private fun roundTrip(size: Int, password: String = "s3cret pass") {
+        val data = ByteArray(size) { (it * 31 + 7).toByte() }
+        val bytes = java.io.ByteArrayOutputStream()
+        com.lenzorium.expenses.backup.BackupCrypto.encrypt(bytes, password).use { it.write(data) }
+        val all = bytes.toByteArray()
+        org.junit.Assert.assertTrue(com.lenzorium.expenses.backup.BackupCrypto.isEncrypted(all))
+        val input = java.io.ByteArrayInputStream(all).also { it.skip(6) }
+        val back = com.lenzorium.expenses.backup.BackupCrypto.decrypt(input, password).readBytes()
+        org.junit.Assert.assertArrayEquals(data, back)
+    }
+
+    @org.junit.Test fun smallAndMultiChunkFilesRoundTrip() { roundTrip(0); roundTrip(1000); roundTrip((1 shl 20) * 2 + 123) }
+
+    @org.junit.Test fun wrongPasswordTamperingAndTruncationAreRejected() {
+        val bytes = java.io.ByteArrayOutputStream()
+        com.lenzorium.expenses.backup.BackupCrypto.encrypt(bytes, "right").use { it.write(ByteArray(5000) { 1 }) }
+        val all = bytes.toByteArray()
+        fun fails(b: ByteArray, pw: String) = runCatching {
+            com.lenzorium.expenses.backup.BackupCrypto.decrypt(java.io.ByteArrayInputStream(b).also { it.skip(6) }, pw).readBytes()
+        }.isFailure
+        org.junit.Assert.assertTrue(fails(all, "wrong"))
+        org.junit.Assert.assertTrue(fails(all.copyOf().also { it[it.size - 3] = (it[it.size - 3] + 1).toByte() }, "right"))
+        org.junit.Assert.assertTrue(fails(all.copyOf(all.size - 10), "right"))
+    }
+}

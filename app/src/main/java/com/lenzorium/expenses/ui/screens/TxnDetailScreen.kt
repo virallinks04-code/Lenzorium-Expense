@@ -103,7 +103,10 @@ fun TxnDetailScreen(state: LedgerState, repo: Repository, id: Long, nav: NavCont
                     }
                     when (t.type) {
                         TxnType.LOAN_CHARGE -> Field("Effect", "Adds to the loan's debt. Available balance is not changed.")
-                        TxnType.TRANSFER -> Field("Effect", "Moves money between your accounts. Your total balance doesn't change.")
+                        TxnType.TRANSFER -> LedgerMath.cashDelta(t, state.foreignIds).let { d ->
+                            if (d == 0L) Field("Effect", "Moves money between your accounts. Your total balance doesn't change.")
+                            else Field("Effect", "Currency exchange: your ${c.code} total changes by ${Money.formatSigned(d, c)}. It isn't income or an expense.")
+                        }
                         else -> if (t.accountId in state.foreignIds) Field("Effect on available balance", "None: this account is in ${state.currencyFor(t).code}, kept separate from your ${c.code} total.")
                             else Field("Effect on available balance", Money.formatSigned(LedgerMath.cashDelta(t, state.foreignIds), c))
                     }

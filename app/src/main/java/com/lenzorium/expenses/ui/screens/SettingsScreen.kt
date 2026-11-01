@@ -90,21 +90,7 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
     val c = state.currency
     var dialog by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var restoreUri by remember { mutableStateOf<Uri?>(null) }
-    var busy by remember { mutableStateOf(false) }
     val askNotify = com.lenzorium.expenses.ui.components.rememberNotificationAsk()
-
-    val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        if (uri != null) scope.launch {
-            busy = true
-            message = BackupManager(context, repo).create(uri).fold(
-                { "Backup saved" to "Your full backup ($it transactions, loans, categories, settings and receipt photos) was saved. Keep it somewhere safe, such as Google Drive." },
-                { "Backup failed" to (it.message ?: "Unknown error") },
-            )
-            busy = false
-        }
-    }
-    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> restoreUri = uri }
 
     ScreenScaffold("More", nav = null) { padding ->
         LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -205,17 +191,7 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
             }
             item { SectionTitle("Backup") }
             item {
-                SectionCard {
-                    Column {
-                        SettingRow(Icons.Rounded.Backup, "Create full backup", "Transactions, loans, categories, settings and receipt photos in one file") {
-                            if (!busy) backupLauncher.launch("lenzorium-backup-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm")) + ".zip")
-                        }
-                        HorizontalDivider()
-                        SettingRow(Icons.Rounded.Restore, "Restore from backup", "Replaces the data on this phone with a backup file") {
-                            if (!busy) restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
-                        }
-                    }
-                }
+                BackupCard(state, repo)
                 Text(
                     "Report exports (PDF/CSV) on the Reports screen are not backups and can't be restored.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -243,7 +219,7 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
                     Text("Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.padding(4.dp))
                     Text(
-                        "Cash, bank and card are labels for how you paid, not separate account balances. Credit-card limits and card debt aren't tracked.",
+                        "Credit-card limits and card debt aren't tracked. Accounts in other currencies are kept separate from your main total.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 24.dp),
@@ -259,7 +235,7 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
             listOf(
                 "Saved on this phone" to "Every entry is written to the app's private database the moment you tap Save. It stays after you close the app, restart the phone or install an update.",
                 "Google backup" to "If Android backup is on (Settings › Google › Backup), your records are included in your phone's encrypted Google backup and come back automatically when you sign in on a new phone and reinstall the app.",
-                "Backup file" to "Create full backup saves everything, including receipt photos, to one file you control. Keep a copy somewhere other than this phone, such as Google Drive.",
+                "Backup file" to "Create full backup saves everything, including receipt photos, to one file you control, optionally protected with a password (AES-256 encryption). Automatic backup can save one to a Google Drive folder every day or week.",
                 "When data is lost" to "Uninstalling the app or using \"Clear storage\" deletes the records on this phone. Restore them from Google backup or from your backup file.",
             ),
         ) { dialog = null }
@@ -298,27 +274,6 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
         "pinOff" -> ConfirmDialog(
             "Turn off PIN lock?", "Anyone with your phone will be able to open the app.", "Turn off",
             onConfirm = { repo.settings.clearPin(); dialog = null }, onDismiss = { dialog = null },
-        )
-    }
-    restoreUri?.let { uri ->
-        ConfirmDialog(
-            title = "Restore from backup?",
-            message = "Everything currently in the app will be replaced by the backup's transactions, loans, categories, settings and receipts. " +
-                "If the backup can't be read, nothing is changed.\n\nTip: create a backup of your current data first.",
-            confirmLabel = "Replace and restore",
-            destructive = true,
-            onConfirm = {
-                restoreUri = null
-                scope.launch {
-                    busy = true
-                    message = BackupManager(context, repo).restore(uri).fold(
-                        { "Restore complete" to "Restored $it transactions." },
-                        { "Restore failed" to (it.message ?: "Unknown error") },
-                    )
-                    busy = false
-                }
-            },
-            onDismiss = { restoreUri = null },
         )
     }
     message?.let { (t, m) -> MessageDialog(t, m) { message = null } }

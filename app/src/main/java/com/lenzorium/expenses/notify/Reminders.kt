@@ -115,6 +115,9 @@ object Notifier {
         }
     }
 
+    fun backupProblem(ctx: Context, why: String) =
+        post(ctx, 3001, CH_BUDGETS, "Automatic backup didn't run", why, "Automatic backup needs attention", "settings")
+
     /** Runs the daily check once a day around 9am. Safe to call on every app start. */
     fun schedule(ctx: Context) {
         val now = LocalDateTime.now()
@@ -140,6 +143,11 @@ class DailyCheckWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker
         val txns = repo.txns.first()
         val statuses = repo.budgets.first().map { PlanMath.status(it, txns, YearMonth.now()) }
         Notifier.budgetCrossings(applicationContext, statuses, repo.categories.first().associateBy { it.id })
+        if (com.lenzorium.expenses.backup.AutoBackup.isDue(repo)) {
+            com.lenzorium.expenses.backup.AutoBackup.run(applicationContext, repo).onFailure { e ->
+                Notifier.backupProblem(applicationContext, e.message ?: "Automatic backup failed.")
+            }
+        }
         return Result.success()
     }
 }

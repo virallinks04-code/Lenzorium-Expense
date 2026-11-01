@@ -172,6 +172,7 @@ private fun SetupWithRestore(repo: Repository) {
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<Uri?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
+    var passwordFor by remember { mutableStateOf<Uri?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> pending = uri }
     androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.background) {
         SetupScreen(repo, onRestore = { picker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) })
@@ -183,9 +184,42 @@ private fun SetupWithRestore(repo: Repository) {
             confirmLabel = "Restore",
             onConfirm = {
                 pending = null
-                scope.launch { message = BackupManager(context, repo).restore(uri).fold({ "Backup restored." }, { it.message ?: "Restore failed." }) }
+                scope.launch {
+                    BackupManager(context, repo).restore(uri).fold(
+                        { message = "Backup restored." },
+                        { e -> if (e is com.lenzorium.expenses.backup.PasswordNeededException) passwordFor = uri else message = e.message ?: "Restore failed." },
+                    )
+                }
             },
             onDismiss = { pending = null },
+        )
+    }
+    passwordFor?.let { uri ->
+        var pw by remember { mutableStateOf("") }
+        var err by remember { mutableStateOf<String?>(null) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { passwordFor = null },
+            title = { Text("Backup password") },
+            text = {
+                Column {
+                    androidx.compose.material3.OutlinedTextField(
+                        pw, { pw = it }, label = { Text("Password") }, singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    )
+                    err?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    scope.launch {
+                        BackupManager(context, repo).restore(uri, pw).fold(
+                            { passwordFor = null; message = "Backup restored." },
+                            { e -> err = e.message ?: "Restore failed." },
+                        )
+                    }
+                }) { Text("Restore") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { passwordFor = null }) { Text("Cancel") } },
         )
     }
     message?.let { MessageDialog("Restore", it) { message = null } }
@@ -225,6 +259,7 @@ internal fun MainShell(
         when (r) {
             "bills" -> nav.navigate(PlanRoutes.BILLS)
             "budgets" -> nav.navigate(PlanRoutes.BUDGETS)
+            "settings" -> nav.goTab(Routes.SETTINGS)
         }
     }
     // Budget warnings as soon as an expense pushes a budget over 80% / 100%.

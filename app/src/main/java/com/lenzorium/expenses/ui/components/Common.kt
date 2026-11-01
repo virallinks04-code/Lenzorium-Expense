@@ -219,7 +219,7 @@ fun TxnRow(t: Txn, cat: Category?, currency: CurrencyInfo, onClick: () -> Unit, 
         }
         Spacer(Modifier.width(8.dp))
         Text(
-            txnAmountText(t, currency, toCurrency),
+            txnAmountText(t, currency, toCurrency).replace(" → ", "\n→ "),
             style = MaterialTheme.typography.titleSmall,
             color = txnColor(t.type),
             textAlign = TextAlign.End,
