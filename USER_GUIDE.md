@@ -31,7 +31,7 @@ Tap **Add Expense** on Home, or the **Add** tab for all four options.
 
 If saving would make an account or your total balance negative, the app asks you to confirm first. If you leave a form with unsaved changes, the app asks before discarding them.
 
-## Transactions
+## Activity
 
 Everything in date order. Search by merchant, source, lender or notes, and filter by type, category, payment method or dates. Tap an entry to see details, edit, or delete it. Balances update immediately, and **Undo** appears for a few seconds after a delete.
 
@@ -41,13 +41,31 @@ A loan's *money received* entry can only be removed by deleting the loan itself 
 
 Open from **Loans** on Home or Transactions. Each loan shows borrowed, repaid and outstanding amounts, its status (**Active**, **Partially repaid**, **Repaid**), an **Overdue** warning after the due date, and its full history. On a loan's page you can repay, add a fee/interest charge (adds to debt only), edit, or delete it.
 
-## Reports
+## Budgets
+More › Budgets. Set a monthly limit for all spending and/or per category. Home shows a ring with how much is used; you get a notification at 80% and when a budget is used up. Only expenses count: transfers and loan repayments never do. "Roll over" adds last month's unused amount (or subtracts overspending).
+
+## Bills and regular income
+More › Bills & regular income, or the bell on Home. Add rent, utilities, subscriptions, school fees or your salary with how often they repeat. When one is due you get a reminder; tap **Mark paid** to record it as a normal entry (you can change the amount) or **Skip this time**. Nothing is ever deducted automatically. The 30-day outlook shows what's expected to go out and come in.
+
+## Savings goals
+More › Savings goals. Set a target and optional date, then **Add** money as you save. Goals only mark money as set aside: balances don't change. The app tells you how much to save each month to reach the date.
+
+## Shortcuts and tags
+Fill in an expense and tap the bookmark at the top to save it as a shortcut; shortcuts appear on Home and in Add for one-tap entries. Add tags like #family or #trip to any entry, then search "#family" in Activity or see spending by tag in Insights. Typing a shop you've used before suggests it and picks its usual category.
+
+## Receipt reading
+After attaching a receipt photo, tap **Read amount from receipt**. The app reads the total, date and shop name on your phone and asks you to confirm each one before filling them in.
+
+## Accounts in other currencies
+When adding an account you can choose its currency (for example a GBP account). It keeps its own balance and is never added into your main total. A transfer between currencies asks for both amounts (sent and received) and appears in reports as a currency exchange, not income or an expense.
+
+## Insights
 
 Choose **Day**, **Week**, **Month** or **Custom**, and use the arrows to move between periods. You'll see total income and expenses, the opening and closing balance for the period, spending by category, income vs expenses, a spending trend, borrowing and repayments, and debt by lender (as of the period's end and current).
 
 **Export** the report as PDF or CSV. Exports are for reading and sharing — they are **not backups**.
 
-## Settings
+## More (settings)
 
 - **Accounts** — add a second bank, JazzCash, Easypaisa and so on; set each account's starting balance; archive accounts you no longer use.
 - Currency, tracking start date, categories (add/rename/delete — deleted categories' entries move to *Other*).
@@ -55,6 +73,9 @@ Choose **Day**, **Week**, **Month** or **Custom**, and use the arrows to move be
 - PIN lock and fingerprint/face unlock. The app re-locks after 30 seconds in the background.
 - **Create full backup** — one .zip file with all transactions, loans, categories, settings and receipt photos. Save it somewhere off the phone (e.g. Google Drive).
 - **Restore from backup** — replaces the data on this phone. The backup is fully checked first; if it can't be read, your current data is left untouched.
+
+## Backups
+More › Backup. **Create full backup** saves everything in one file; you can protect it with a password (needed to restore it; it can't be recovered if forgotten). **Restore** shows what the file contains before replacing anything. **Automatic backup** saves a backup daily or weekly to a folder you pick, for example a Google Drive folder, and keeps the newest 5.
 
 ## Is my data saved?
 

@@ -21,6 +21,8 @@ android {
     compileSdk = 36
 
     defaultConfig {
+        // Phones only (ARM). Skips emulator-only x86 copies of the receipt reader, saving ~23 MB.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         applicationId = "com.lenzorium.expenses"
         minSdk = 26
         targetSdk = 36
