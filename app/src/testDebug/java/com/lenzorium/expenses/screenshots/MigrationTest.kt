@@ -22,7 +22,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class MigrationTest {
     @Test
-    fun version1DatabaseUpgradesWithoutLosingData() {
+    fun version1DatabaseUpgradesToLatestWithoutLosingData() {
         val ctx = ApplicationProvider.getApplicationContext<Context>()
         val name = "migration-test.db"
         ctx.deleteDatabase(name)
@@ -48,7 +48,7 @@ class MigrationTest {
         }
 
         val room = Room.databaseBuilder(ctx, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
             .allowMainThreadQueries()
             .build()
         runBlocking {
@@ -65,6 +65,14 @@ class MigrationTest {
             assertEquals(125000L, txns[1]!!.amountMinor)
             assertEquals(1, dao.allLoans().size)
             assertEquals(1, dao.allCategories().size)
+            // Version 3 additions start empty and leave old entries untouched.
+            assertEquals("", txns[1]!!.tags)
+            assertNull(txns[1]!!.recurringId)
+            assertNull(accounts.first().currency)
+            assertEquals(0, dao.allBudgets().size + dao.allRecurring().size + dao.allTemplates().size + dao.allGoals().size + dao.allGoalEntries().size)
+            // New tables work after the upgrade.
+            dao.insertBudget(com.lenzorium.expenses.data.Budget(categoryId = null, limitMinor = 1000, startMonthEpochDay = 0, createdAt = 0))
+            assertEquals(1, dao.allBudgets().size)
         }
         room.close()
     }

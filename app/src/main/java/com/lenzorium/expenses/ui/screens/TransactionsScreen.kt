@@ -96,6 +96,8 @@ class TxnFilterViewModel : ViewModel() {
     private fun matches(t: Txn, q: String, state: LedgerState): Boolean {
         val loan = t.loanId?.let { state.loanById[it] }
         val cat = t.categoryId?.let { state.categoryById[it] }
+        val tq = q.removePrefix("#")
+        if (t.tagList.any { it.contains(tq, ignoreCase = true) }) return true
         return listOfNotNull(t.party, t.notes, cat?.name, loan?.lender, loan?.title, state.accountLabel(t)).any { it.contains(q, ignoreCase = true) }
     }
 }
@@ -109,7 +111,7 @@ fun TransactionsScreen(state: LedgerState, nav: NavController) {
     var dialog by remember { mutableStateOf<String?>(null) }
 
     ScreenScaffold(
-        "Transactions",
+        "Activity",
         nav = null,
         actions = {
             TextButton(onClick = { nav.navigate(Routes.LOANS) }) {
@@ -121,7 +123,7 @@ fun TransactionsScreen(state: LedgerState, nav: NavController) {
             TextField(
                 value = f.query,
                 onValueChange = { f.query = it },
-                placeholder = { Text("Search transactions", maxLines = 1) },
+                placeholder = { Text("Search, or #tag", maxLines = 1) },
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 trailingIcon = { if (f.query.isNotEmpty()) IconButton(onClick = { f.query = "" }) { Icon(Icons.Rounded.Close, "Clear search") } },
                 singleLine = true,

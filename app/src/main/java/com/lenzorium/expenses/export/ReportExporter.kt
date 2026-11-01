@@ -73,7 +73,7 @@ object ReportExporter {
         row("Lender", "Outstanding as of period end", "Outstanding now (current)")
         r.lenders.forEach { row(it.lender, n(it.atPeriodEnd), n(it.current)) }
         row()
-        row("Date", "Time", "Type", "Category", "Description", "Account", "Amount", "Effect on available balance", "Notes")
+        row("Date", "Time", "Type", "Category", "Description", "Account", "Amount", "Effect on available balance", "Notes", "Tags")
         r.txns.forEach { t ->
             val d = ldt(t.timestamp)
             row(
@@ -84,6 +84,7 @@ object ReportExporter {
                 n(t.amountMinor),
                 n(LedgerMath.cashDelta(t)),
                 t.notes,
+                t.tagList.joinToString(" ") { "#$it" },
             )
         }
         return sb.toString()

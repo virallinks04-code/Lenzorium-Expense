@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.withTransaction
 import com.lenzorium.expenses.domain.LedgerMath
 import com.lenzorium.expenses.domain.Money
+import com.lenzorium.expenses.domain.PlanMath
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -35,6 +36,11 @@ class Repository(
     val loans = dao.observeLoans()
     val categories = dao.observeCategories()
     val accounts = dao.observeAccounts()
+    val budgets = dao.observeBudgets()
+    val recurring = dao.observeRecurring()
+    val templates = dao.observeTemplates()
+    val goals = dao.observeGoals()
+    val goalEntries = dao.observeGoalEntries()
 
     val receiptsDir: File get() = File(context.filesDir, "receipts").apply { mkdirs() }
     fun receiptFile(name: String): File = File(receiptsDir, name)
@@ -371,6 +377,9 @@ class Repository(
             val fallback = dao.allCategories().firstOrNull { it.kind == c.kind && it.isFallback }
                 ?: return@withTransaction SaveResult.Error("No fallback category found.")
             dao.moveCategory(c.id, fallback.id)
+            dao.moveRecurringCategory(c.id, fallback.id)
+            dao.moveTemplateCategory(c.id, fallback.id)
+            dao.deleteBudgetsForCategory(c.id)
             dao.deleteCategory(c)
             SaveResult.Ok(c.id)
         }
@@ -381,6 +390,132 @@ class Repository(
         val ms = LocalDate.ofEpochDay(newStartEpochDay).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         dao.allTxns().none { it.timestamp < ms }
     }
+
+    // ---------- Budgets ----------
+
+    suspend fun saveBudget(b: Budget): SaveResult = withContext(Dispatchers.IO) {
+        if (b.limitMinor <= 0) return@withContext SaveResult.Error("Enter a monthly limit greater than zero.")
+        val all = dao.allBudgets()
+        if (all.any { it.id != b.id && it.categoryId == b.categoryId })
+            return@withContext SaveResult.Error(if (b.categoryId == null) "You already have an overall budget. Edit it instead." else "This category already has a budget. Edit it instead.")
+        if (b.categoryId != null && dao.allCategories().none { it.id == b.categoryId && it.kind == CategoryKind.EXPENSE })
+            return@withContext SaveResult.Error("Choose an expense category.")
+        if (b.id == 0L) SaveResult.Ok(dao.insertBudget(b)) else { dao.updateBudget(b); SaveResult.Ok(b.id) }
+    }
+
+    suspend fun deleteBudget(id: Long) = withContext(Dispatchers.IO) { dao.deleteBudget(id) }
+
+    // ---------- Bills, subscriptions and regular income ----------
+
+    suspend fun saveRecurring(r: Recurring): SaveResult = withContext(Dispatchers.IO) {
+        if (r.name.isBlank()) return@withContext SaveResult.Error("Enter a name, e.g. Electricity or Netflix.")
+        if (r.amountMinor <= 0) return@withContext SaveResult.Error("Enter an amount greater than zero.")
+        if (r.type != TxnType.EXPENSE && r.type != TxnType.INCOME) return@withContext SaveResult.Error("Choose bill or income.")
+        if (r.categoryId == null) return@withContext SaveResult.Error("Choose a category.")
+        if (r.intervalCount !in 1..365) return@withContext SaveResult.Error("Repeat every 1 to 365.")
+        if (r.endEpochDay != null && r.endEpochDay < r.startEpochDay) return@withContext SaveResult.Error("The end date is before the first due date.")
+        checkAccount(r.accountId, "an account")?.let { return@withContext SaveResult.Error(it) }
+        val fixed = r.copy(name = r.name.trim(), party = r.party.trim().ifEmpty { r.name.trim() })
+        if (fixed.id == 0L) SaveResult.Ok(dao.insertRecurring(fixed.copy(nextDueEpochDay = fixed.startEpochDay)))
+        else {
+            val old = dao.recurring(fixed.id) ?: return@withContext SaveResult.Error("This item no longer exists.")
+            // A changed schedule restarts from the first due date that hasn't been handled yet.
+            val scheduleChanged = old.startEpochDay != fixed.startEpochDay || old.frequency != fixed.frequency || old.intervalCount != fixed.intervalCount
+            val next = if (scheduleChanged) {
+                val handledUpTo = old.nextDueEpochDay - 1
+                if (fixed.startEpochDay > handledUpTo) fixed.startEpochDay else PlanMath.nextAfter(fixed, handledUpTo) ?: fixed.startEpochDay
+            } else old.nextDueEpochDay
+            dao.updateRecurring(fixed.copy(nextDueEpochDay = next, createdAt = old.createdAt)); SaveResult.Ok(fixed.id)
+        }
+    }
+
+    suspend fun deleteRecurring(id: Long) = withContext(Dispatchers.IO) { dao.deleteRecurring(id) }
+
+    /**
+     * Records the due payment as a normal expense/income entry and moves the item to its next date, in one
+     * database transaction. The entry's request id is tied to the due date, so a repeated tap never doubles it.
+     */
+    suspend fun markRecurringPaid(id: Long, dueEpochDay: Long, amountMinor: Long, accountId: Long?, paidAt: Long): SaveResult =
+        withContext(Dispatchers.IO) {
+            val r = dao.recurring(id) ?: return@withContext SaveResult.Error("This item no longer exists.")
+            if (amountMinor <= 0) return@withContext SaveResult.Error("Enter an amount greater than zero.")
+            checkDate(paidAt)?.let { return@withContext SaveResult.Error(it) }
+            checkAccount(accountId, "an account")?.let { return@withContext SaveResult.Error(it) }
+            try {
+                db.withTransaction {
+                    val req = "rec-$id-$dueEpochDay"
+                    val existing = dao.txnByRequest(req)
+                    val txnId = existing?.id ?: dao.insertTxn(
+                        Txn(
+                            type = r.type, amountMinor = amountMinor, categoryId = r.categoryId, timestamp = paidAt,
+                            party = r.party.ifBlank { r.name }, notes = r.name, accountId = accountId,
+                            recurringId = r.id, requestId = req, createdAt = System.currentTimeMillis(),
+                        )
+                    )
+                    if (r.nextDueEpochDay == dueEpochDay) advance(r)
+                    SaveResult.Ok(txnId)
+                }
+            } catch (e: Exception) {
+                SaveResult.Error("Couldn't save: ${e.message ?: "unknown error"}")
+            }
+        }
+
+    /** Skips the current due date without recording anything. */
+    suspend fun skipRecurring(id: Long): SaveResult = withContext(Dispatchers.IO) {
+        db.withTransaction {
+            val r = dao.recurring(id) ?: return@withTransaction SaveResult.Error("This item no longer exists.")
+            advance(r); SaveResult.Ok(id)
+        }
+    }
+
+    private suspend fun advance(r: Recurring) {
+        val next = PlanMath.nextAfter(r, r.nextDueEpochDay)
+        dao.updateRecurring(if (next == null) r.copy(active = false) else r.copy(nextDueEpochDay = next))
+    }
+
+    suspend fun recurringItem(id: Long): Recurring? = withContext(Dispatchers.IO) { dao.recurring(id) }
+
+    // ---------- Quick-add templates ----------
+
+    suspend fun saveTemplate(t: Template): SaveResult = withContext(Dispatchers.IO) {
+        if (t.name.isBlank()) return@withContext SaveResult.Error("Enter a name for the shortcut.")
+        if (t.amountMinor < 0) return@withContext SaveResult.Error("The amount can't be negative.")
+        if (t.type != TxnType.EXPENSE && t.type != TxnType.INCOME) return@withContext SaveResult.Error("Shortcuts are for expenses or income.")
+        val all = dao.allTemplates()
+        if (all.any { it.id != t.id && it.name.equals(t.name.trim(), ignoreCase = true) }) return@withContext SaveResult.Error("A shortcut with this name already exists.")
+        val fixed = t.copy(name = t.name.trim(), party = t.party.trim())
+        if (fixed.id == 0L) SaveResult.Ok(dao.insertTemplate(fixed.copy(sortOrder = (all.maxOfOrNull { it.sortOrder } ?: 0) + 1)))
+        else { dao.updateTemplate(fixed); SaveResult.Ok(fixed.id) }
+    }
+
+    suspend fun deleteTemplate(id: Long) = withContext(Dispatchers.IO) { dao.deleteTemplate(id) }
+    suspend fun template(id: Long): Template? = withContext(Dispatchers.IO) { dao.template(id) }
+
+    // ---------- Savings goals (earmarks only: no balance changes) ----------
+
+    suspend fun saveGoal(g: Goal): SaveResult = withContext(Dispatchers.IO) {
+        if (g.name.isBlank()) return@withContext SaveResult.Error("Enter a name for the goal.")
+        if (g.targetMinor <= 0) return@withContext SaveResult.Error("Enter a target greater than zero.")
+        val fixed = g.copy(name = g.name.trim())
+        if (fixed.id == 0L) SaveResult.Ok(dao.insertGoal(fixed)) else { dao.updateGoal(fixed); SaveResult.Ok(fixed.id) }
+    }
+
+    suspend fun deleteGoal(id: Long) = withContext(Dispatchers.IO) {
+        db.withTransaction { dao.deleteGoalEntries(id); dao.deleteGoal(id) }
+    }
+
+    /** Sets money aside (positive) or takes it back (negative). The goal's total can't drop below zero. */
+    suspend fun addGoalEntry(goalId: Long, amountMinor: Long, note: String): SaveResult = withContext(Dispatchers.IO) {
+        if (amountMinor == 0L) return@withContext SaveResult.Error("Enter an amount.")
+        db.withTransaction {
+            dao.goal(goalId) ?: return@withTransaction SaveResult.Error("This goal no longer exists.")
+            val saved = dao.allGoalEntries().filter { it.goalId == goalId }.sumOf { it.amountMinor }
+            if (saved + amountMinor < 0) return@withTransaction SaveResult.Error("You can take back at most ${fmt(saved)}.")
+            SaveResult.Ok(dao.insertGoalEntry(GoalEntry(goalId = goalId, amountMinor = amountMinor, epochDay = LocalDate.now().toEpochDay(), note = note.trim(), createdAt = System.currentTimeMillis())))
+        }
+    }
+
+    suspend fun deleteGoalEntry(id: Long) = withContext(Dispatchers.IO) { dao.deleteGoalEntry(id) }
 }
 
 object DefaultAccounts {

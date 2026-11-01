@@ -63,6 +63,11 @@ import com.lenzorium.expenses.ui.components.StatTile
 import com.lenzorium.expenses.ui.components.TrendBars
 import com.lenzorium.expenses.ui.theme.LocalMoneyColors
 import kotlinx.coroutines.launch
+import com.lenzorium.expenses.domain.LedgerMath
+import com.lenzorium.expenses.domain.PlanMath
+import com.lenzorium.expenses.ui.components.Dates
+import com.lenzorium.expenses.ui.components.ProgressBar
+import com.lenzorium.expenses.ui.components.budgetColor
 import java.time.LocalDate
 
 @Composable
@@ -99,7 +104,7 @@ fun ReportsScreen(state: LedgerState, repo: Repository) {
         }
     }
 
-    ScreenScaffold("Reports", nav = null) { padding ->
+    ScreenScaffold("Insights", nav = null) { padding ->
         LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -174,6 +179,86 @@ fun ReportsScreen(state: LedgerState, repo: Repository) {
             item {
                 SectionTitle("Income vs expenses")
                 SectionCard { Column(Modifier.padding(16.dp)) { IncomeVsExpense(report.totals.income, report.totals.expenses, m.income, m.expense, c) } }
+            }
+
+            // Compared with the previous period of the same kind
+            item {
+                val prev = remember(period, state.txns) {
+                    val p = if (kind == PeriodKind.CUSTOM) {
+                        val len = java.time.temporal.ChronoUnit.DAYS.between(period.start, period.endInclusive) + 1
+                        Period(PeriodKind.CUSTOM, period.start.minusDays(len), period.start.minusDays(1))
+                    } else period.shift(-1)
+                    p to LedgerMath.periodTotals(state.txns, Dates.startOf(p.start), Dates.startOf(p.endInclusive.plusDays(1)))
+                }
+                val (pp, pt) = prev
+                SectionTitle("Compared with ${pp.label}")
+                SectionCard {
+                    Column(Modifier.padding(16.dp)) {
+                        CompareRow("Expenses", report.totals.expenses, pt.expenses, c, higherIsGood = false)
+                        CompareRow("Income", report.totals.income, pt.income, c, higherIsGood = true)
+                        val changes = (report.totals.expensesByCategory.keys + pt.expensesByCategory.keys).distinct().map { id ->
+                            Triple(id, report.totals.expensesByCategory[id] ?: 0L, pt.expensesByCategory[id] ?: 0L)
+                        }.filter { it.second != it.third }.sortedByDescending { kotlin.math.abs(it.second - it.third) }.take(4)
+                        if (changes.isNotEmpty()) {
+                            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                            Text("Biggest changes", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            changes.forEach { (id, now, before) ->
+                                CompareRow(id?.let { state.categoryById[it]?.name } ?: "Uncategorised", now, before, c, higherIsGood = false)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Budget vs actual for a calendar month
+            if (kind == PeriodKind.MONTH && state.budgets.isNotEmpty()) {
+                item {
+                    val ym = java.time.YearMonth.from(period.start)
+                    val rows = remember(state.budgets, state.txns, ym) { state.budgets.map { PlanMath.status(it, state.txns, ym) } }
+                    SectionTitle("Budget vs actual")
+                    SectionCard {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            rows.forEach { st ->
+                                Column {
+                                    Row {
+                                        Text(st.budget.categoryId?.let { state.categoryById[it]?.name } ?: "All spending", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                        Text("${Money.number(st.spent, c.decimals)} / ${Money.number(st.available, c.decimals)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = budgetColor(st.level))
+                                    }
+                                    Spacer(Modifier.height(6.dp))
+                                    ProgressBar(st.fraction, budgetColor(st.level))
+                                }
+                            }
+                            Text("Amounts in ${c.code}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+
+            val merchants = PlanMath.topMerchants(state.txns, report.startMillis, report.endMillis)
+            if (merchants.isNotEmpty()) {
+                item {
+                    SectionTitle("Top places you spent")
+                    SectionCard {
+                        Column(Modifier.padding(16.dp)) {
+                            merchants.forEachIndexed { i, (name, v) ->
+                                if (i > 0) HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                                KV("${i + 1}.  $name", Money.format(v, c))
+                            }
+                        }
+                    }
+                }
+            }
+            val tagTotals = PlanMath.byTag(state.txns, report.startMillis, report.endMillis)
+            if (tagTotals.isNotEmpty()) {
+                item {
+                    SectionTitle("Spending by tag")
+                    SectionCard {
+                        Column(Modifier.padding(16.dp)) {
+                            tagTotals.take(8).forEach { (t, v) -> KV("#$t", Money.format(v, c)) }
+                            Text("An entry with two tags is counted under both.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                        }
+                    }
+                }
             }
 
             item {
@@ -274,6 +359,30 @@ fun ReportsScreen(state: LedgerState, repo: Repository) {
 }
 
 private fun LocalDate.coerceAtMostToday(): LocalDate = if (isAfter(LocalDate.now())) LocalDate.now() else this
+
+@Composable
+private fun CompareRow(label: String, now: Long, before: Long, c: com.lenzorium.expenses.domain.CurrencyInfo, higherIsGood: Boolean) {
+    val m = LocalMoneyColors.current
+    val diff = now - before
+    val pct = if (before > 0) (diff * 100 / before) else null
+    val good = if (higherIsGood) diff >= 0 else diff <= 0
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Text(Money.format(now, c), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.width(10.dp))
+        Text(
+            when {
+                diff == 0L -> "same"
+                pct == null -> "new"
+                else -> (if (diff > 0) "▲ " else "▼ ") + "${kotlin.math.abs(pct)}%"
+            },
+            style = MaterialTheme.typography.labelMedium,
+            color = if (diff == 0L) MaterialTheme.colorScheme.onSurfaceVariant else if (good) m.income else m.expense,
+            modifier = Modifier.width(64.dp),
+            textAlign = TextAlign.End,
+        )
+    }
+}
 
 @Composable
 private fun KV(label: String, value: String, bold: Boolean = false) {

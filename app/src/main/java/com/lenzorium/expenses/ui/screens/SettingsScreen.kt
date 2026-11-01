@@ -20,6 +20,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
+import androidx.compose.material.icons.rounded.AccountBalance
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.DonutLarge
+import androidx.compose.material.icons.rounded.EventRepeat
+import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.CalendarToday
 import androidx.compose.material.icons.rounded.Category
@@ -86,6 +92,7 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
     var message by remember { mutableStateOf<Pair<String, String>?>(null) }
     var restoreUri by remember { mutableStateOf<Uri?>(null) }
     var busy by remember { mutableStateOf(false) }
+    val askNotify = com.lenzorium.expenses.ui.components.rememberNotificationAsk()
 
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) scope.launch {
@@ -99,8 +106,39 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
     }
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> restoreUri = uri }
 
-    ScreenScaffold("Settings", nav = null) { padding ->
+    ScreenScaffold("More", nav = null) { padding ->
         LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item { SectionTitle("Plan") }
+            item {
+                SectionCard {
+                    Column {
+                        val ob = state.overallBudget
+                        SettingRow(
+                            Icons.Rounded.DonutLarge, "Budgets",
+                            when {
+                                ob != null -> "${Money.format(ob.remaining.coerceAtLeast(0), c)} left this month"
+                                state.budgets.isNotEmpty() -> "${state.budgets.size} category budget${if (state.budgets.size > 1) "s" else ""}"
+                                else -> "Set monthly spending limits"
+                            },
+                        ) { nav.navigate(PlanRoutes.BUDGETS) }
+                        HorizontalDivider()
+                        SettingRow(
+                            Icons.Rounded.EventRepeat, "Bills & regular income",
+                            when {
+                                state.dueNow.isNotEmpty() -> "${state.dueNow.size} due now"
+                                state.recurring.isNotEmpty() -> "${state.recurring.count { it.active }} active"
+                                else -> "Reminders for rent, utilities, subscriptions"
+                            },
+                        ) { nav.navigate(PlanRoutes.BILLS) }
+                        HorizontalDivider()
+                        SettingRow(Icons.Rounded.Flag, "Savings goals", if (state.goalProgress.isEmpty()) "Save step by step for something" else "${Money.format(state.setAside, c)} set aside") { nav.navigate(PlanRoutes.GOALS) }
+                        HorizontalDivider()
+                        SettingRow(Icons.Rounded.AccountBalance, "Loans", state.debt.takeIf { it > 0 }?.let { "${Money.format(it, c)} outstanding" } ?: "Money you borrowed") { nav.navigate(Routes.LOANS) }
+                        HorizontalDivider()
+                        SettingRow(Icons.Rounded.Bolt, "Shortcuts", if (state.templates.isEmpty()) "One-tap entries for things you buy often" else "${state.templates.size} saved") { nav.navigate(PlanRoutes.SHORTCUTS) }
+                    }
+                }
+            }
             item { SectionTitle("Ledger") }
             item {
                 SectionCard {
@@ -125,6 +163,22 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
                         SettingRow(Icons.Rounded.DarkMode, "Theme", when (s.themeMode) { ThemeMode.SYSTEM -> "Follow system"; ThemeMode.LIGHT -> "Light"; ThemeMode.DARK -> "Dark" }) { dialog = "theme" }
                         HorizontalDivider()
                         SwitchRow(Icons.Rounded.Visibility, "Show \"Balance after clearing debt\"", "Available balance − outstanding debt, on Home", s.showAfterDebt) { v -> repo.settings.update { it.copy(showAfterDebt = v) } }
+                    }
+                }
+            }
+            item { SectionTitle("Notifications") }
+            item {
+                SectionCard {
+                    Column {
+                        SwitchRow(Icons.Rounded.NotificationsActive, "Bill reminders", "Around 9am when a bill is due. No amounts are shown.", s.remindersEnabled) { v ->
+                            if (v) askNotify()
+                            repo.settings.update { it.copy(remindersEnabled = v) }
+                        }
+                        HorizontalDivider()
+                        SwitchRow(Icons.Rounded.DonutLarge, "Budget warnings", "When a budget reaches 80% and when it's used up", s.budgetAlerts) { v ->
+                            if (v) askNotify()
+                            repo.settings.update { it.copy(budgetAlerts = v) }
+                        }
                     }
                 }
             }

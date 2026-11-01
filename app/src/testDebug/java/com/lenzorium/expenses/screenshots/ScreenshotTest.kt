@@ -34,6 +34,9 @@ import com.lenzorium.expenses.ui.screens.LoanFormScreen
 import com.lenzorium.expenses.ui.screens.LockScreen
 import com.lenzorium.expenses.ui.screens.SetupScreen
 import com.lenzorium.expenses.ui.screens.TxnDetailScreen
+import com.lenzorium.expenses.ui.screens.PlanRoutes
+import com.lenzorium.expenses.ui.screens.RecurringFormScreen
+import com.lenzorium.expenses.ui.screens.GoalDetailScreen
 import com.lenzorium.expenses.ui.theme.LenzoriumTheme
 import org.junit.Before
 import org.junit.Rule
@@ -113,4 +116,16 @@ class ScreenshotTest {
     @Test fun accountDetail() = shot("18_account_cash") { AccountDetailScreen(s, repo, 1, it) }
     @Test fun txnDetailTransfer() = shot("19_transfer_detail") { TxnDetailScreen(s, repo, 100, it) }
     @Test fun setup() = shot("15_setup_welcome") { SetupScreen(repo) {} }
+
+    // Planning (Release 1)
+    @Config(qualifiers = "w360dp-h1100dp-xxhdpi") @Test fun budgets() = tab("20_budgets", PlanRoutes.BUDGETS)
+    @Test fun budgetsEmpty() = tab("20_budgets_empty", PlanRoutes.BUDGETS, state = SampleData.empty)
+    @Config(qualifiers = "w360dp-h1300dp-xxhdpi") @Test fun bills() = tab("21_bills", PlanRoutes.BILLS)
+    @Config(qualifiers = "w360dp-h1500dp-xxhdpi") @Test fun billForm() = shot("22_bill_form") { RecurringFormScreen(s, repo, 0, it) }
+    @Test fun goals() = tab("23_goals", PlanRoutes.GOALS)
+    @Test fun goalDetail() = shot("24_goal_detail") { GoalDetailScreen(s, repo, 1, it) }
+    @Test fun shortcuts() = tab("25_shortcuts", PlanRoutes.SHORTCUTS)
+    @Test fun budgetsDark() = tab("20_budgets_dark", PlanRoutes.BUDGETS, dark = true)
+    @Config(qualifiers = "w360dp-h1700dp-xxhdpi") @Test fun homeFullDark() = tab("01_home_full_dark", Routes.HOME, dark = true)
+    @Config(qualifiers = "w360dp-h1300dp-xxhdpi") @Test fun addExpenseFull() = shot("09_add_expense_full") { EntryScreen(repo, s, TxnType.EXPENSE, 0, it) }
 }

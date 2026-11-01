@@ -36,63 +36,80 @@ val LocalMoneyColors = staticCompositionLocalOf {
     MoneyColors(Color.Red, Color.Green, Color.Blue, Color.Yellow, Color.DarkGray, Color.Gray, Color.White)
 }
 
-// Lenzorium brand palette, taken from the logo: royal blue, navy wordmark, sky-blue accents.
+// Lenzorium palette (Professional Upgrade proposal): light blue + white + deep navy, a little gold.
+// Primary is a slightly deeper shade of the brand blue #4A9EDB so white text on buttons stays readable (WCAG AA).
+object Brand {
+    val Blue = Color(0xFF4A9EDB)
+    val BlueDeep = Color(0xFF1C74BC)
+    val SoftBlue = Color(0xFFEAF5FC)
+    val Navy = Color(0xFF102A45)
+    val Gold = Color(0xFFCCA34C)
+    val Positive = Color(0xFF1E9185)
+    val Warning = Color(0xFFB94B51)
+}
+
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF0A63C9),
+    primary = Brand.BlueDeep,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFD7E6FF),
-    onPrimaryContainer = Color(0xFF001B3F),
-    secondary = Color(0xFF3A5A86),
+    primaryContainer = Color(0xFFD6EBFA),
+    onPrimaryContainer = Brand.Navy,
+    secondary = Color(0xFF3F5F80),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFDCE8F8),
-    onSecondaryContainer = Color(0xFF0B2545),
-    tertiary = Color(0xFF0090E0),
-    tertiaryContainer = Color(0xFFCDEBFF),
-    background = Color(0xFFF4F7FC),
-    onBackground = Color(0xFF0F172A),
-    surface = Color(0xFFF4F7FC),
-    onSurface = Color(0xFF0F172A),
-    surfaceVariant = Color(0xFFDFE7F2),
-    onSurfaceVariant = Color(0xFF475467),
+    secondaryContainer = Brand.SoftBlue,
+    onSecondaryContainer = Brand.Navy,
+    tertiary = Brand.Gold,
+    onTertiary = Color(0xFF2B1F00),
+    tertiaryContainer = Color(0xFFF6EBCF),
+    onTertiaryContainer = Color(0xFF3A2C00),
+    background = Color(0xFFF5F9FD),
+    onBackground = Brand.Navy,
+    surface = Color(0xFFF5F9FD),
+    onSurface = Brand.Navy,
+    surfaceVariant = Color(0xFFE1EAF3),
+    onSurfaceVariant = Color(0xFF4F6278),
     surfaceContainerLowest = Color.White,
-    surfaceContainerLow = Color(0xFFEFF4FA),
-    surfaceContainer = Color(0xFFE9EFF7),
-    surfaceContainerHigh = Color(0xFFE2E9F3),
-    surfaceContainerHighest = Color(0xFFDBE3EE),
-    outline = Color(0xFF7A8597),
-    outlineVariant = Color(0xFFC8D1DE),
-    inverseSurface = Color(0xFF0E1E3A),
-    inversePrimary = Color(0xFF8CC0FF),
-    error = Color(0xFFBA1A1A),
+    surfaceContainerLow = Color(0xFFF0F6FB),
+    surfaceContainer = Color(0xFFEAF2F9),
+    surfaceContainerHigh = Color(0xFFE3ECF5),
+    surfaceContainerHighest = Color(0xFFDCE6F0),
+    outline = Color(0xFF7D8DA0),
+    outlineVariant = Color(0xFFCCD8E4),
+    inverseSurface = Brand.Navy,
+    inverseOnSurface = Color(0xFFEAF2F9),
+    inversePrimary = Color(0xFF9CCDF2),
+    error = Brand.Warning,
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF82B8FF),
-    onPrimary = Color(0xFF00305F),
-    primaryContainer = Color(0xFF004A90),
-    onPrimaryContainer = Color(0xFFD7E6FF),
-    secondary = Color(0xFFB5C7E3),
-    onSecondary = Color(0xFF1F3350),
-    secondaryContainer = Color(0xFF233756),
-    onSecondaryContainer = Color(0xFFDCE8F8),
-    tertiary = Color(0xFF7DD0FF),
-    tertiaryContainer = Color(0xFF004C70),
-    background = Color(0xFF0A111E),
-    onBackground = Color(0xFFE2E8F2),
-    surface = Color(0xFF0A111E),
-    onSurface = Color(0xFFE2E8F2),
-    surfaceVariant = Color(0xFF364256),
-    onSurfaceVariant = Color(0xFFB8C3D3),
-    surfaceContainerLowest = Color(0xFF060C17),
-    surfaceContainerLow = Color(0xFF101929),
-    surfaceContainer = Color(0xFF152033),
-    surfaceContainerHigh = Color(0xFF1C283D),
-    surfaceContainerHighest = Color(0xFF263349),
-    outline = Color(0xFF8792A4),
-    outlineVariant = Color(0xFF334057),
-    inverseSurface = Color(0xFFE2E8F2),
-    inversePrimary = Color(0xFF0A63C9),
-    error = Color(0xFFFFB4AB),
+    primary = Color(0xFF8CC6F0),
+    onPrimary = Color(0xFF00324F),
+    primaryContainer = Color(0xFF0E4C78),
+    onPrimaryContainer = Color(0xFFD6EBFA),
+    secondary = Color(0xFFB4C8DE),
+    onSecondary = Color(0xFF1E3348),
+    secondaryContainer = Color(0xFF1F3953),
+    onSecondaryContainer = Color(0xFFDCEAF6),
+    tertiary = Color(0xFFE3C278),
+    onTertiary = Color(0xFF3D2E00),
+    tertiaryContainer = Color(0xFF574400),
+    onTertiaryContainer = Color(0xFFF6E2AE),
+    background = Color(0xFF0A1625),
+    onBackground = Color(0xFFE3EBF4),
+    surface = Color(0xFF0A1625),
+    onSurface = Color(0xFFE3EBF4),
+    surfaceVariant = Color(0xFF34465A),
+    onSurfaceVariant = Color(0xFFB7C6D6),
+    surfaceContainerLowest = Color(0xFF07111D),
+    surfaceContainerLow = Color(0xFF0F1D2E),
+    surfaceContainer = Color(0xFF132336),
+    surfaceContainerHigh = Color(0xFF1A2B40),
+    surfaceContainerHighest = Color(0xFF23364C),
+    outline = Color(0xFF8798AB),
+    outlineVariant = Color(0xFF31445A),
+    inverseSurface = Color(0xFFE3EBF4),
+    inverseOnSurface = Brand.Navy,
+    inversePrimary = Brand.BlueDeep,
+    error = Color(0xFFF2A3A7),
 )
 
 val Inter = FontFamily(
@@ -133,7 +150,7 @@ private val AppTypography = Typography(
 private val AppShapes = Shapes(
     small = RoundedCornerShape(10.dp),
     medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(24.dp),
+    large = RoundedCornerShape(20.dp),
 )
 
 @Composable
@@ -148,13 +165,13 @@ fun LenzoriumTheme(mode: ThemeMode, content: @Composable () -> Unit) {
     val dark = isAppDark(mode)
     val money = if (dark) {
         MoneyColors(
-            expense = Color(0xFFFF8A80), income = Color(0xFF6FD8B0), loan = Color(0xFFFFC66D),
-            warning = Color(0xFFFFB74D), heroStart = Color(0xFF0B4FA6), heroEnd = Color(0xFF07214D), onHero = Color.White,
+            expense = Color(0xFFF2A3A7), income = Color(0xFF6FD1C4), loan = Color(0xFFE3C278),
+            warning = Color(0xFFFFB74D), heroStart = Color(0xFF1E6FB0), heroEnd = Color(0xFF0B1E33), onHero = Color.White,
         )
     } else {
         MoneyColors(
-            expense = Color(0xFFC62828), income = Color(0xFF0B7A4B), loan = Color(0xFFB26A00),
-            warning = Color(0xFFE65100), heroStart = Color(0xFF0A6BD6), heroEnd = Color(0xFF002A6B), onHero = Color.White,
+            expense = Brand.Warning, income = Brand.Positive, loan = Color(0xFF9A7420),
+            warning = Color(0xFFC0661A), heroStart = Color(0xFF3A8FD3), heroEnd = Brand.Navy, onHero = Color.White,
         )
     }
     CompositionLocalProvider(LocalMoneyColors provides money) {

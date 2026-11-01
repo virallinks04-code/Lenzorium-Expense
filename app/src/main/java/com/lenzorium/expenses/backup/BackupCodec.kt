@@ -5,7 +5,13 @@ import com.lenzorium.expenses.data.AccountKind
 import com.lenzorium.expenses.data.AppDatabase
 import com.lenzorium.expenses.data.AppSettings
 import com.lenzorium.expenses.data.DefaultAccounts
+import com.lenzorium.expenses.data.Budget
 import com.lenzorium.expenses.data.Category
+import com.lenzorium.expenses.data.Frequency
+import com.lenzorium.expenses.data.Goal
+import com.lenzorium.expenses.data.GoalEntry
+import com.lenzorium.expenses.data.Recurring
+import com.lenzorium.expenses.data.Template
 import com.lenzorium.expenses.data.CategoryKind
 import com.lenzorium.expenses.data.Loan
 import com.lenzorium.expenses.data.PayMethod
@@ -23,6 +29,11 @@ data class BackupData(
     val txns: List<Txn>,
     val createdAt: Long,
     val accounts: List<Account> = DefaultAccounts.all,
+    val budgets: List<Budget> = emptyList(),
+    val recurring: List<Recurring> = emptyList(),
+    val templates: List<Template> = emptyList(),
+    val goals: List<Goal> = emptyList(),
+    val goalEntries: List<GoalEntry> = emptyList(),
 )
 
 class BackupFormatException(message: String) : Exception(message)
@@ -30,7 +41,7 @@ class BackupFormatException(message: String) : Exception(message)
 /** JSON encoding of a full backup. Pure Kotlin + org.json so it can be unit-tested. */
 object BackupCodec {
     const val FORMAT = "lenzorium-expenses-backup"
-    const val VERSION = 2
+    const val VERSION = 3
 
     fun encode(d: BackupData): String {
         val root = JSONObject()
@@ -48,6 +59,8 @@ object BackupCodec {
             put("pinSalt", s.pinSalt ?: JSONObject.NULL)
             put("biometricEnabled", s.biometricEnabled)
             put("hideAmounts", s.hideAmounts)
+            put("remindersEnabled", s.remindersEnabled)
+            put("budgetAlerts", s.budgetAlerts)
         })
         root.put("categories", JSONArray().apply {
             d.categories.forEach { c ->
@@ -61,7 +74,7 @@ object BackupCodec {
             d.accounts.forEach { a ->
                 put(JSONObject().apply {
                     put("id", a.id); put("name", a.name); put("kind", a.kind.name); put("openingMinor", a.openingMinor)
-                    put("archived", a.archived); put("sortOrder", a.sortOrder)
+                    put("archived", a.archived); put("sortOrder", a.sortOrder); put("currency", a.currency ?: JSONObject.NULL)
                 })
             }
         })
@@ -83,6 +96,52 @@ object BackupCodec {
                     put("receiptFile", t.receiptFile ?: JSONObject.NULL); put("loanId", t.loanId ?: JSONObject.NULL)
                     put("requestId", t.requestId); put("createdAt", t.createdAt)
                     put("accountId", t.accountId ?: JSONObject.NULL); put("toAccountId", t.toAccountId ?: JSONObject.NULL)
+                    put("tags", t.tags); put("recurringId", t.recurringId ?: JSONObject.NULL)
+                })
+            }
+        })
+        root.put("budgets", JSONArray().apply {
+            d.budgets.forEach { b ->
+                put(JSONObject().apply {
+                    put("id", b.id); put("categoryId", b.categoryId ?: JSONObject.NULL); put("limitMinor", b.limitMinor)
+                    put("rollover", b.rollover); put("startMonthEpochDay", b.startMonthEpochDay); put("createdAt", b.createdAt)
+                })
+            }
+        })
+        root.put("recurring", JSONArray().apply {
+            d.recurring.forEach { r ->
+                put(JSONObject().apply {
+                    put("id", r.id); put("name", r.name); put("type", r.type.name); put("amountMinor", r.amountMinor)
+                    put("categoryId", r.categoryId ?: JSONObject.NULL); put("accountId", r.accountId ?: JSONObject.NULL); put("party", r.party)
+                    put("frequency", r.frequency.name); put("intervalCount", r.intervalCount); put("startEpochDay", r.startEpochDay)
+                    put("endEpochDay", r.endEpochDay ?: JSONObject.NULL); put("nextDueEpochDay", r.nextDueEpochDay); put("remind", r.remind)
+                    put("remindDaysBefore", r.remindDaysBefore); put("active", r.active); put("notes", r.notes); put("createdAt", r.createdAt)
+                })
+            }
+        })
+        root.put("templates", JSONArray().apply {
+            d.templates.forEach { t ->
+                put(JSONObject().apply {
+                    put("id", t.id); put("name", t.name); put("type", t.type.name); put("amountMinor", t.amountMinor)
+                    put("categoryId", t.categoryId ?: JSONObject.NULL); put("accountId", t.accountId ?: JSONObject.NULL)
+                    put("party", t.party); put("tags", t.tags); put("sortOrder", t.sortOrder)
+                })
+            }
+        })
+        root.put("goals", JSONArray().apply {
+            d.goals.forEach { g ->
+                put(JSONObject().apply {
+                    put("id", g.id); put("name", g.name); put("targetMinor", g.targetMinor); put("targetEpochDay", g.targetEpochDay ?: JSONObject.NULL)
+                    put("accountId", g.accountId ?: JSONObject.NULL); put("iconKey", g.iconKey); put("colorArgb", g.colorArgb)
+                    put("archived", g.archived); put("createdAt", g.createdAt)
+                })
+            }
+        })
+        root.put("goalEntries", JSONArray().apply {
+            d.goalEntries.forEach { e ->
+                put(JSONObject().apply {
+                    put("id", e.id); put("goalId", e.goalId); put("amountMinor", e.amountMinor); put("epochDay", e.epochDay)
+                    put("note", e.note); put("createdAt", e.createdAt)
                 })
             }
         })
@@ -113,6 +172,8 @@ object BackupCodec {
                 pinSalt = s.optStringOrNull("pinSalt"),
                 biometricEnabled = s.optBoolean("biometricEnabled", false),
                 hideAmounts = s.optBoolean("hideAmounts", false),
+                remindersEnabled = s.optBoolean("remindersEnabled", true),
+                budgetAlerts = s.optBoolean("budgetAlerts", true),
             )
             val cats = root.getJSONArray("categories").let { a ->
                 (0 until a.length()).map { i ->
@@ -145,6 +206,7 @@ object BackupCodec {
                         receiptFile = o.optStringOrNull("receiptFile"), loanId = o.optLongOrNull("loanId"),
                         requestId = o.getString("requestId"), createdAt = o.getLong("createdAt"),
                         accountId = o.optLongOrNull("accountId"), toAccountId = o.optLongOrNull("toAccountId"),
+                        tags = o.optString("tags", ""), recurringId = o.optLongOrNull("recurringId"),
                     )
                 }
             }
@@ -157,6 +219,7 @@ object BackupCodec {
                         Account(
                             id = o.getLong("id"), name = o.getString("name"), kind = AccountKind.valueOf(o.getString("kind")),
                             openingMinor = o.getLong("openingMinor"), archived = o.optBoolean("archived", false), sortOrder = o.optInt("sortOrder", 0),
+                            currency = o.optStringOrNull("currency"),
                         )
                     }
                 }
@@ -174,8 +237,44 @@ object BackupCodec {
                     )
                 }
             }
+            fun arr(k: String) = root.optJSONArray(k) ?: JSONArray()
+            fun <T> JSONArray.each(f: (JSONObject) -> T): List<T> = (0 until length()).map { f(getJSONObject(it)) }
+            val budgets = arr("budgets").each { o ->
+                Budget(o.getLong("id"), o.optLongOrNull("categoryId"), o.getLong("limitMinor"), o.optBoolean("rollover", false), o.getLong("startMonthEpochDay"), o.optLong("createdAt", 0L))
+            }
+            val recurring = arr("recurring").each { o ->
+                Recurring(
+                    id = o.getLong("id"), name = o.getString("name"), type = TxnType.valueOf(o.getString("type")), amountMinor = o.getLong("amountMinor"),
+                    categoryId = o.optLongOrNull("categoryId"), accountId = o.optLongOrNull("accountId"), party = o.optString("party", ""),
+                    frequency = Frequency.valueOf(o.getString("frequency")), intervalCount = o.optInt("intervalCount", 1),
+                    startEpochDay = o.getLong("startEpochDay"), endEpochDay = o.optLongOrNull("endEpochDay"), nextDueEpochDay = o.getLong("nextDueEpochDay"),
+                    remind = o.optBoolean("remind", true), remindDaysBefore = o.optInt("remindDaysBefore", 1), active = o.optBoolean("active", true),
+                    notes = o.optString("notes", ""), createdAt = o.optLong("createdAt", 0L),
+                )
+            }
+            val templates = arr("templates").each { o ->
+                Template(
+                    id = o.getLong("id"), name = o.getString("name"), type = TxnType.valueOf(o.getString("type")), amountMinor = o.optLong("amountMinor", 0L),
+                    categoryId = o.optLongOrNull("categoryId"), accountId = o.optLongOrNull("accountId"), party = o.optString("party", ""),
+                    tags = o.optString("tags", ""), sortOrder = o.optInt("sortOrder", 0),
+                )
+            }
+            val goals = arr("goals").each { o ->
+                Goal(
+                    id = o.getLong("id"), name = o.getString("name"), targetMinor = o.getLong("targetMinor"), targetEpochDay = o.optLongOrNull("targetEpochDay"),
+                    accountId = o.optLongOrNull("accountId"), iconKey = o.optString("iconKey", "goal"), colorArgb = o.optLong("colorArgb", 0xFF4A9EDBL),
+                    archived = o.optBoolean("archived", false), createdAt = o.optLong("createdAt", 0L),
+                )
+            }
+            val goalEntries = arr("goalEntries").each { o ->
+                GoalEntry(o.getLong("id"), o.getLong("goalId"), o.getLong("amountMinor"), o.getLong("epochDay"), o.optString("note", ""), o.optLong("createdAt", 0L))
+            }
             validate(cats, loans, finalTxns, accounts)
-            return BackupData(settings.copy(accountsMigrated = true), cats, loans, finalTxns, root.optLong("createdAt", 0L), accounts)
+            validatePlans(cats, accounts, budgets, recurring, templates, goals, goalEntries)
+            return BackupData(
+                settings.copy(accountsMigrated = true), cats, loans, finalTxns, root.optLong("createdAt", 0L), accounts,
+                budgets, recurring, templates, goals, goalEntries,
+            )
         } catch (e: BackupFormatException) {
             throw e
         } catch (e: Exception) {
@@ -201,6 +300,24 @@ object BackupCodec {
             if (t.type.isLoanRelated && (t.loanId == null || t.loanId !in loanIds)) throw BackupFormatException("A loan entry refers to a missing loan.")
             t.receiptFile?.let { if (!isSafeName(it)) throw BackupFormatException("The backup contains an invalid file name.") }
         }
+    }
+
+    private fun validatePlans(
+        cats: List<Category>, accounts: List<Account>, budgets: List<Budget>, recurring: List<Recurring>,
+        templates: List<Template>, goals: List<Goal>, entries: List<GoalEntry>,
+    ) {
+        val catIds = cats.map { it.id }.toSet()
+        val accIds = accounts.map { it.id }.toSet()
+        val goalIds = goals.map { it.id }.toSet()
+        fun dupes(ids: List<Long>) = ids.toSet().size != ids.size
+        if (dupes(budgets.map { it.id }) || dupes(recurring.map { it.id }) || dupes(templates.map { it.id }) || dupes(goals.map { it.id }) || dupes(entries.map { it.id }))
+            throw BackupFormatException("The backup contains duplicate records.")
+        if (budgets.any { it.limitMinor <= 0 || (it.categoryId != null && it.categoryId !in catIds) }) throw BackupFormatException("A budget in the backup is invalid.")
+        if (recurring.any { it.amountMinor <= 0 || (it.categoryId != null && it.categoryId !in catIds) || (it.accountId != null && it.accountId !in accIds) })
+            throw BackupFormatException("A bill in the backup is invalid.")
+        if (templates.any { it.amountMinor < 0 || (it.categoryId != null && it.categoryId !in catIds) || (it.accountId != null && it.accountId !in accIds) })
+            throw BackupFormatException("A shortcut in the backup is invalid.")
+        if (goals.any { it.targetMinor <= 0 } || entries.any { it.goalId !in goalIds }) throw BackupFormatException("A savings goal in the backup is invalid.")
     }
 
     fun isSafeName(name: String): Boolean = name.isNotEmpty() && name.length < 200 && name.matches(Regex("^[A-Za-z0-9._-]+$")) && name != "." && name != ".."

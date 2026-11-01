@@ -49,6 +49,21 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.EventRepeat
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import com.lenzorium.expenses.domain.BudgetLevel
+import com.lenzorium.expenses.domain.PlanMath
+import com.lenzorium.expenses.ui.components.ProgressRing
+import com.lenzorium.expenses.ui.components.TrendBars
+import com.lenzorium.expenses.ui.components.budgetColor
+import java.time.YearMonth
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -77,7 +92,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 @Composable
-fun HomeScreen(state: LedgerState, nav: NavController, onDismissAccountsNotice: () -> Unit = {}, onToggleHide: () -> Unit = {}) {
+fun HomeScreen(state: LedgerState, nav: NavController, repo: com.lenzorium.expenses.data.Repository, onDismissAccountsNotice: () -> Unit = {}, onToggleHide: () -> Unit = {}) {
     val c = state.currency
     val m = LocalMoneyColors.current
     val today = LocalDate.now()
@@ -95,6 +110,8 @@ fun HomeScreen(state: LedgerState, nav: NavController, onDismissAccountsNotice: 
     }
     val upcoming = state.loanSummaries.filter { it.outstanding > 0 && it.loan.dueEpochDay != null }.sortedBy { it.loan.dueEpochDay }.take(3)
     val recent = state.txns.take(6)
+    var paying by remember { mutableStateOf<com.lenzorium.expenses.data.Recurring?>(null) }
+    paying?.let { r -> PayBillDialog(state, repo, r) { paying = null } }
 
     LazyColumn(modifier = Modifier.statusBarsPadding(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -102,6 +119,12 @@ fun HomeScreen(state: LedgerState, nav: NavController, onDismissAccountsNotice: 
                 Column(Modifier.weight(1f)) {
                     Text(greeting(), style = MaterialTheme.typography.headlineSmall)
                     Text(today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM")), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                val dueCount = state.dueNow.size
+                IconButton(onClick = { nav.navigate(PlanRoutes.BILLS) }) {
+                    BadgedBox(badge = { if (dueCount > 0) Badge { Text("$dueCount") } }) {
+                        Icon(Icons.Rounded.Notifications, if (dueCount > 0) "$dueCount bills due" else "Bills")
+                    }
                 }
                 FilledTonalButton(onClick = { nav.navigate(Routes.LOANS) }, contentPadding = PaddingValues(horizontal = 14.dp)) {
                     Icon(Icons.Rounded.AccountBalance, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Loans")
@@ -265,18 +288,80 @@ fun HomeScreen(state: LedgerState, nav: NavController, onDismissAccountsNotice: 
         item {
             Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
                 QuickAction(Icons.Rounded.TrendingUp, m.income, "Income") { nav.navigate(Routes.entry(TxnType.INCOME)) }
-                QuickAction(Icons.Rounded.AccountBalance, m.loan, "Take loan") { nav.navigate(Routes.loanForm()) }
-                QuickAction(Icons.Rounded.Payments, m.loan, "Repay") { nav.navigate(Routes.repay()) }
                 QuickAction(Icons.Rounded.SwapHoriz, MaterialTheme.colorScheme.primary, "Transfer") { nav.navigate(Routes.transfer()) }
+                QuickAction(Icons.Rounded.Payments, m.loan, "Repay") { nav.navigate(Routes.repay()) }
+                QuickAction(Icons.Rounded.EventRepeat, MaterialTheme.colorScheme.primary, "Bills") { nav.navigate(PlanRoutes.BILLS) }
             }
         }
 
-        // Period totals
+        if (state.templates.isNotEmpty()) {
+            item {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    state.templates.take(8).forEach { t ->
+                        AssistChip(
+                            onClick = { nav.navigate(PlanRoutes.template(t.id, t.type)) },
+                            label = { Text(t.name + if (t.amountMinor > 0) " · " + Money.format(t.amountMinor, c) else "") },
+                            leadingIcon = { Icon(Icons.Rounded.Bolt, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary) },
+                        )
+                    }
+                }
+            }
+        }
+
+        // Bills waiting to be paid or skipped
+        if (state.dueNow.isNotEmpty()) {
+            item {
+                SectionTitle("Due now") { TextButton(onClick = { nav.navigate(PlanRoutes.BILLS) }) { Text("All bills") } }
+                SectionCard {
+                    Column {
+                        state.dueNow.take(3).forEachIndexed { i, r ->
+                            if (i > 0) HorizontalDivider()
+                            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                val overdue = r.nextDueEpochDay < state.today
+                                IconBadge(if (overdue) Icons.Rounded.Warning else Icons.Rounded.EventRepeat, if (overdue) m.expense else MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(r.name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                                    Text(
+                                        "${dueText(r.nextDueEpochDay, state.today)} · ${Money.format(r.amountMinor, c)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (overdue) m.expense else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                FilledTonalButton(onClick = { paying = r }) { Text(if (r.type == TxnType.INCOME) "Received" else "Pay") }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Monthly budget
         item {
+            val ob = state.overallBudget
             SectionTitle("This month · ${today.format(DateTimeFormatter.ofPattern("MMMM yyyy"))}")
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatTile("Today's expenses", Money.format(todayTotals.expenses, c), Modifier.weight(1f), valueColor = m.expense)
-                StatTile("Month's expenses", Money.format(month.expenses, c), Modifier.weight(1f), valueColor = m.expense)
+            SectionCard(Modifier.clickable { nav.navigate(PlanRoutes.BUDGETS) }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (ob != null) {
+                        ProgressRing(ob.fraction, budgetColor(ob.level), size = 84.dp, centerTop = "${(ob.fraction * 100).toInt().coerceAtMost(999)}%", centerBottom = "of budget")
+                    } else {
+                        ProgressRing(0f, MaterialTheme.colorScheme.primary, size = 84.dp, centerTop = "—", centerBottom = "no budget")
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Spent this month", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(Money.format(month.expenses, c), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
+                        if (ob != null) {
+                            Text(
+                                if (ob.remaining >= 0) "${Money.format(ob.remaining, c)} left of ${Money.format(ob.available, c)}" else "${Money.format(-ob.remaining, c)} over budget",
+                                style = MaterialTheme.typography.bodySmall, color = budgetColor(ob.level), fontWeight = FontWeight.SemiBold,
+                            )
+                        } else {
+                            Text("Tap to set a monthly budget", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Text("Today ${Money.format(todayTotals.expenses, c)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -288,6 +373,44 @@ fun HomeScreen(state: LedgerState, nav: NavController, onDismissAccountsNotice: 
                     valueColor = m.loan,
                     caption = "Not counted as expenses",
                 )
+            }
+        }
+
+        // Category budgets close to their limit
+        val tight = state.categoryBudgets.filter { it.level != BudgetLevel.OK }.take(3)
+        if (tight.isNotEmpty()) {
+            item {
+                SectionTitle("Budgets to watch")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { tight.forEach { s -> BudgetRow(state, s) { nav.navigate(PlanRoutes.BUDGETS) } } }
+            }
+        }
+
+        // This month vs last month
+        if (state.txns.isNotEmpty()) {
+            item {
+                val trend = remember(state.txns) { PlanMath.monthlyExpenses(state.txns, YearMonth.now(), 6) }
+                SectionTitle("Spending trend")
+                SectionCard {
+                    Column(Modifier.padding(16.dp)) {
+                        val last = state.lastMonthSpent
+                        val dayShare = today.dayOfMonth.toFloat() / today.lengthOfMonth()
+                        Text(
+                            when {
+                                last == 0L -> "Your monthly totals will build up here."
+                                month.expenses <= last * dayShare -> "On pace to spend less than last month (${Money.format(last, c)})."
+                                month.expenses <= last -> "Spending is ahead of last month's pace (${Money.format(last, c)} in total)."
+                                else -> "Already ${Money.format(month.expenses - last, c)} more than all of last month."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        TrendBars(
+                            trend.map { it.second },
+                            trend.map { it.first.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault()) },
+                            MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
             }
         }
 
@@ -310,7 +433,7 @@ fun HomeScreen(state: LedgerState, nav: NavController, onDismissAccountsNotice: 
 
         if (upcoming.isNotEmpty()) {
             item {
-                SectionTitle("Upcoming loan due dates")
+                SectionTitle("Loan due dates")
                 SectionCard {
                     Column {
                         upcoming.forEachIndexed { i, s ->

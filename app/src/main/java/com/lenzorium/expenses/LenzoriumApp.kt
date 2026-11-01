@@ -13,5 +13,7 @@ class LenzoriumApp : Application() {
         super.onCreate()
         val db = AppDatabase.create(this)
         repository = Repository(this, db, SettingsStore(this))
+        com.lenzorium.expenses.notify.Notifier.createChannels(this)
+        runCatching { com.lenzorium.expenses.notify.Notifier.schedule(this) }
     }
 }

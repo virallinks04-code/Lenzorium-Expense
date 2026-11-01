@@ -9,6 +9,13 @@ import com.lenzorium.expenses.data.PayMethod
 import com.lenzorium.expenses.data.Txn
 import com.lenzorium.expenses.data.TxnType
 import com.lenzorium.expenses.ui.LedgerState
+import com.lenzorium.expenses.ui.PlanData
+import com.lenzorium.expenses.data.Budget
+import com.lenzorium.expenses.data.Frequency
+import com.lenzorium.expenses.data.Goal
+import com.lenzorium.expenses.data.GoalEntry
+import com.lenzorium.expenses.data.Recurring
+import com.lenzorium.expenses.data.Template
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -53,13 +60,13 @@ object SampleData {
     )
 
     val txns: List<Txn> = listOf(
-        t(TxnType.EXPENSE, 1_250, "Food", at(0, 13, 10), "Savour Foods"),
+        t(TxnType.EXPENSE, 1_250, "Food", at(0, 13, 10), "Savour Foods").copy(tags = "family"),
         t(TxnType.EXPENSE, 450, "Transport", at(0, 9, 5), "Careem", PayMethod.CASH),
         t(TxnType.EXPENSE, 6_830, "Groceries", at(1, 19, 40), "Imtiaz Super Market"),
         t(TxnType.EXPENSE, 4_200, "Bills", at(1, 11, 0), "K-Electric", PayMethod.BANK),
         t(TxnType.EXPENSE, 900, "Food", at(2, 17, 30), "Chai Shai", PayMethod.CASH),
         t(TxnType.EXPENSE, 3_999, "Shopping", at(3, 16, 15), "Outfitters"),
-        t(TxnType.EXPENSE, 1_800, "Entertainment", at(3, 21, 0), "Cinepax"),
+        t(TxnType.EXPENSE, 1_800, "Entertainment", at(3, 21, 0), "Cinepax").copy(tags = "family,weekend"),
         t(TxnType.LOAN_REPAYMENT, 10_000, null, at(5, 10, 0), "Ali Raza", PayMethod.BANK, loanId = 1),
         Txn(id = 100, type = TxnType.TRANSFER, amountMinor = 10_000_00, timestamp = at(4, 18, 30), notes = "ATM withdrawal", requestId = "s100", createdAt = 0, accountId = 2, toAccountId = 1),
         Txn(id = 101, type = TxnType.TRANSFER, amountMinor = 3_000_00, timestamp = at(9, 12, 0), notes = "Top-up", requestId = "s101", createdAt = 0, accountId = 2, toAccountId = 3),
@@ -80,6 +87,40 @@ object SampleData {
         lastBackupAt = System.currentTimeMillis() - 2L * 24 * 60 * 60 * 1000,
     )
 
-    val state = LedgerState(loaded = true, settings = settings, txns = txns, loans = loans, categories = categories, accounts = accounts)
+    private val month1 = monthStart.toEpochDay()
+    private val td = today.toEpochDay()
+    val plans = PlanData(
+        budgets = listOf(
+            Budget(1, null, 120_000_00, false, month1, 0),
+            Budget(2, cat("Food"), 3_000_00, false, month1, 0),
+            Budget(3, cat("Shopping"), 5_000_00, true, month1, 0),
+            Budget(4, cat("Transport"), 4_000_00, false, month1, 0),
+        ),
+        recurring = listOf(
+            Recurring(1, "Netflix", TxnType.EXPENSE, 1_100_00, cat("Entertainment"), 2, "Netflix", Frequency.MONTHLY, 1, td - 31, null, td, true, 1, true, "", 0),
+            Recurring(2, "PTCL Internet", TxnType.EXPENSE, 3_500_00, cat("Bills"), 2, "PTCL", Frequency.MONTHLY, 1, td - 34, null, td - 3, true, 1, true, "", 0),
+            Recurring(3, "Rent", TxnType.EXPENSE, 45_000_00, cat("Rent"), 2, "Landlord", Frequency.MONTHLY, 1, td - 29 + 30, null, td + 1, true, 3, true, "", 0),
+            Recurring(4, "Salary", TxnType.INCOME, 150_000_00, cat("Salary"), 2, "Employer", Frequency.MONTHLY, 1, td - 30 + 30, null, td + 2, true, 0, true, "", 0),
+            Recurring(5, "School fees", TxnType.EXPENSE, 12_000_00, cat("Education"), 2, "", Frequency.MONTHLY, 3, td + 12, null, td + 12, true, 7, true, "", 0),
+        ),
+        templates = listOf(
+            Template(1, "Chai", TxnType.EXPENSE, 150_00, cat("Food"), 1, "Chai Shai", "", 1),
+            Template(2, "Petrol", TxnType.EXPENSE, 0, cat("Transport"), 1, "Shell", "", 2),
+            Template(3, "Careem", TxnType.EXPENSE, 0, cat("Transport"), 2, "Careem", "", 3),
+        ),
+        goals = listOf(
+            Goal(1, "New phone", 150_000_00, today.plusMonths(5).toEpochDay(), 2, "goal", 0xFF4A9EDBL, false, 0),
+            Goal(2, "Emergency fund", 100_000_00, null, 2, "goal", 0xFF1E9185L, false, 0),
+            Goal(3, "Eid shopping", 20_000_00, today.plusMonths(1).toEpochDay(), 1, "goal", 0xFFCCA34CL, false, 0),
+        ),
+        goalEntries = listOf(
+            GoalEntry(1, 1, 30_000_00, td - 20, "Bonus", 0),
+            GoalEntry(2, 1, 15_000_00, td - 5, "", 0),
+            GoalEntry(3, 2, 35_000_00, td - 40, "", 0),
+            GoalEntry(4, 3, 20_000_00, td - 2, "", 0),
+        ),
+    )
+
+    val state = LedgerState(loaded = true, settings = settings, txns = txns, loans = loans, categories = categories, accounts = accounts, plans = plans)
     val empty = LedgerState(loaded = true, settings = settings, txns = emptyList(), loans = emptyList(), categories = categories, accounts = accounts.take(2).map { it.copy(openingMinor = if (it.id == 1L) 15_000_00 else 70_000_00) })
 }

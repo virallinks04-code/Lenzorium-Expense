@@ -14,6 +14,8 @@ class MainActivity : FragmentActivity() {
 
     /** Shared with Compose; true while the PIN screen should cover the app. */
     val locked = mutableStateOf(false)
+    /** Screen requested by a notification tap ("bills" or "budgets"). */
+    val pendingRoute = mutableStateOf<String?>(null)
     private var stoppedAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,7 +24,13 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge()
         if (savedInstanceState == null) locked.value = repo.settings.current.lockEnabled
         else locked.value = savedInstanceState.getBoolean(KEY_LOCKED, repo.settings.current.lockEnabled)
-        setContent { AppRoot(repo, locked) }
+        pendingRoute.value = intent?.getStringExtra(com.lenzorium.expenses.notify.Notifier.EXTRA_ROUTE)
+        setContent { AppRoot(repo, locked, pendingRoute) }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        intent.getStringExtra(com.lenzorium.expenses.notify.Notifier.EXTRA_ROUTE)?.let { pendingRoute.value = it }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

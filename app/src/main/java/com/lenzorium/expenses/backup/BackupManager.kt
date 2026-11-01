@@ -27,6 +27,11 @@ class BackupManager(private val context: Context, private val repo: Repository) 
                 txns = dao.allTxns(),
                 createdAt = System.currentTimeMillis(),
                 accounts = dao.allAccounts(),
+                budgets = dao.allBudgets(),
+                recurring = dao.allRecurring(),
+                templates = dao.allTemplates(),
+                goals = dao.allGoals(),
+                goalEntries = dao.allGoalEntries(),
             )
             val json = BackupCodec.encode(data)
             val out = context.contentResolver.openOutputStream(uri, "wt") ?: error("Couldn't open the file for writing.")
@@ -85,10 +90,16 @@ class BackupManager(private val context: Context, private val repo: Repository) 
                 dao.clearLoans()
                 dao.clearCategories()
                 dao.clearAccounts()
+                dao.clearBudgets(); dao.clearRecurring(); dao.clearTemplates(); dao.clearGoalEntries(); dao.clearGoals()
                 dao.insertAccounts(data.accounts)
                 dao.insertCategories(data.categories)
                 dao.insertLoans(data.loans)
                 dao.insertTxns(data.txns)
+                dao.insertBudgets(data.budgets)
+                dao.insertRecurringList(data.recurring)
+                dao.insertTemplates(data.templates)
+                dao.insertGoals(data.goals)
+                dao.insertGoalEntries(data.goalEntries)
             }
 
             // Swap receipt folders only after the database restore succeeded.

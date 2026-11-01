@@ -54,6 +54,13 @@ import com.lenzorium.expenses.data.PayMethod
 import com.lenzorium.expenses.data.Repository
 import com.lenzorium.expenses.data.SaveResult
 import com.lenzorium.expenses.data.Txn
+import com.lenzorium.expenses.data.Tags
+import com.lenzorium.expenses.data.Template
+import com.lenzorium.expenses.domain.PlanMath
+import com.lenzorium.expenses.ui.components.MerchantField
+import com.lenzorium.expenses.ui.components.TagEditor
+import androidx.compose.material.icons.rounded.BookmarkAdd
+import androidx.compose.material3.IconButton
 import com.lenzorium.expenses.data.TxnType
 import com.lenzorium.expenses.domain.LedgerMath
 import com.lenzorium.expenses.domain.Money
@@ -83,13 +90,16 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.UUID
 
-class EntryViewModel(private val repo: Repository, val type: TxnType, private val editId: Long) : ViewModel() {
+class EntryViewModel(private val repo: Repository, val type: TxnType, private val editId: Long, private val templateId: Long = 0) : ViewModel() {
     var amount by mutableStateOf("")
     var categoryId by mutableStateOf<Long?>(null)
     var timestamp by mutableStateOf(System.currentTimeMillis())
     var party by mutableStateOf("")
     var accountId by mutableStateOf<Long?>(null)
     var notes by mutableStateOf("")
+    var tags by mutableStateOf<List<String>>(emptyList())
+    /** Possible duplicate awaiting confirmation. */
+    var confirmDuplicate by mutableStateOf<String?>(null)
     var receipt by mutableStateOf<String?>(null)
     var loaded by mutableStateOf(editId == 0L)
     var saving by mutableStateOf(false)
@@ -105,7 +115,7 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
 
     val isEdit get() = editId != 0L
 
-    private fun snapshot() = listOf(amount, categoryId, timestamp, party, notes, receipt).toString()
+    private fun snapshot() = listOf(amount, categoryId, timestamp, party, notes, receipt, tags).toString()
     private var initial: String? = if (editId == 0L) snapshot() else null
     val dirty: Boolean get() = loaded && !done && initial != null && snapshot() != initial
 
@@ -120,12 +130,39 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
                 party = t.party
                 accountId = t.accountId
                 notes = t.notes
+                tags = t.tagList
                 receipt = t.receiptFile
                 originalReceipt = t.receiptFile
             }
             initial = snapshot()
             loaded = true
         }
+        if (editId == 0L && templateId != 0L) {
+            loaded = false
+            viewModelScope.launch {
+                repo.template(templateId)?.let { t ->
+                    if (t.amountMinor > 0) amount = Money.toInput(t.amountMinor, repo.settings.current.currency.decimals)
+                    categoryId = t.categoryId
+                    party = t.party
+                    t.accountId?.let { accountId = it }
+                    tags = Tags.parse(t.tags)
+                }
+                initial = snapshot()
+                loaded = true
+            }
+        }
+    }
+
+    /** Fills merchant and, if none is chosen yet, the category last used with it. */
+    fun pickMerchant(name: String, state: LedgerState) {
+        party = name
+        if (categoryId == null) categoryId = PlanMath.suggestCategory(state.txns, name, type)
+    }
+
+    fun currentTemplate(state: LedgerState): Template {
+        val minor = Money.parse(amount, state.currency.decimals) ?: 0L
+        val name = party.trim().ifEmpty { categoryId?.let { state.categoryById[it]?.name } ?: if (type == TxnType.EXPENSE) "Expense" else "Income" }
+        return Template(name = name, type = type, amountMinor = minor.coerceAtLeast(0), categoryId = categoryId, accountId = accountId, party = party.trim(), tags = Tags.join(tags))
     }
 
     /** Pre-selects an account for a new entry without counting as a user change. */
@@ -137,7 +174,7 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
         receipt = name
     }
 
-    fun save(state: LedgerState, confirmed: Boolean) {
+    fun save(state: LedgerState, confirmed: Boolean, duplicateOk: Boolean = confirmed) {
         if (saving || done) return
         error = null
         val d = repo.settings.current.currency.decimals
@@ -161,7 +198,14 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
             requestId = original?.requestId ?: requestId,
             createdAt = original?.createdAt ?: System.currentTimeMillis(),
             accountId = accountId,
+            tags = Tags.join(tags),
+            recurringId = original?.recurringId,
         )
+        if (!duplicateOk && original == null) PlanMath.likelyDuplicate(state.txns, txn)?.let {
+            confirmDuplicate = "You saved the same amount from the same account a moment ago${it.party.takeIf { p -> p.isNotBlank() }?.let { p -> " ($p)" } ?: ""}. Save this one as well?"
+            return
+        }
+        confirmDuplicate = null
         if (!confirmed) negativeWarning(state, original, txn)?.let { confirmNegative = it; return }
         confirmNegative = null
         saving = true
@@ -182,8 +226,8 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
 }
 
 @Composable
-fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Long, nav: NavController) {
-    val vm: EntryViewModel = viewModel(factory = simpleFactory { EntryViewModel(repo, type, editId) })
+fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Long, nav: NavController, templateId: Long = 0) {
+    val vm: EntryViewModel = viewModel(factory = simpleFactory { EntryViewModel(repo, type, editId, templateId) })
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val c = state.currency
@@ -228,6 +272,16 @@ fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Lon
     val title = (if (vm.isEdit) "Edit " else "Add ") + if (isExpense) "Expense" else "Income"
     ScreenScaffold(
         title, nav, onBack = back,
+        actions = {
+            if (!vm.isEdit && vm.loaded) IconButton(onClick = {
+                scope.launch {
+                    when (val r = repo.saveTemplate(vm.currentTemplate(state))) {
+                        is SaveResult.Ok -> messenger.show("Saved as a shortcut. Find it under Add.")
+                        is SaveResult.Error -> vm.error = r.message
+                    }
+                }
+            }) { Icon(Icons.Rounded.BookmarkAdd, "Save as shortcut") }
+        },
         bottomBar = {
             if (vm.loaded) FormSaveBar(
                 if (vm.isEdit) "Save changes" else if (isExpense) "Save expense" else "Save income",
@@ -260,10 +314,16 @@ fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Lon
                 )
             }
             FormSection {
-                TextInput(vm.party, { vm.party = it }, if (isExpense) "Merchant or place" else "Source", placeholder = if (isExpense) "e.g. Imtiaz, petrol pump, pharmacy" else "e.g. employer or client")
+                MerchantField(
+                    vm.party, { vm.party = it }, { vm.pickMerchant(it, state) },
+                    if (isExpense) state.merchantsExpense else state.merchantsIncome,
+                    if (isExpense) "Merchant or place" else "Source",
+                    if (isExpense) "e.g. Imtiaz, petrol pump, pharmacy" else "e.g. employer or client",
+                )
                 DateTimeField(vm.timestamp, { vm.timestamp = it }, minDate = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay), showTime = true, label = "Date and time")
                 TextInput(vm.notes, { vm.notes = it }, "Notes", singleLine = false)
             }
+            FormSection { TagEditor(vm.tags, { vm.tags = it }, state.allTags) }
 
             if (isExpense) {
                 FormSection {
@@ -305,12 +365,21 @@ fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Lon
         }
     }
 
+    vm.confirmDuplicate?.let { msg ->
+        ConfirmDialog(
+            title = "Possible duplicate",
+            message = msg,
+            confirmLabel = "Save anyway",
+            onConfirm = { vm.save(state, confirmed = false, duplicateOk = true) },
+            onDismiss = { vm.confirmDuplicate = null },
+        )
+    }
     vm.confirmNegative?.let { msg ->
         ConfirmDialog(
             title = "Balance will go negative",
             message = msg,
             confirmLabel = "Save anyway",
-            onConfirm = { vm.save(state, confirmed = true) },
+            onConfirm = { vm.save(state, confirmed = true, duplicateOk = true) },
             onDismiss = { vm.confirmNegative = null },
         )
     }

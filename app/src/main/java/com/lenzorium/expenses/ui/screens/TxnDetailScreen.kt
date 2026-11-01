@@ -107,6 +107,8 @@ fun TxnDetailScreen(state: LedgerState, repo: Repository, id: Long, nav: NavCont
                         else -> Field("Effect on available balance", Money.formatSigned(LedgerMath.cashDelta(t), c))
                     }
                     if (t.notes.isNotBlank()) Field("Notes", t.notes)
+                    if (t.tagList.isNotEmpty()) Field("Tags", t.tagList.joinToString("  ") { "#$it" })
+                    t.recurringId?.let { rid -> state.recurring.firstOrNull { it.id == rid }?.let { Field("Bill", it.name) } }
                 }
             }
             if (loan != null) {

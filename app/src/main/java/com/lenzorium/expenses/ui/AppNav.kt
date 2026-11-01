@@ -105,6 +105,21 @@ import com.lenzorium.expenses.ui.screens.TxnDetailScreen
 import com.lenzorium.expenses.ui.theme.LenzoriumTheme
 import com.lenzorium.expenses.ui.theme.LocalMoneyColors
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.EventRepeat
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material3.AssistChip
+import androidx.compose.runtime.LaunchedEffect
+import com.lenzorium.expenses.notify.Notifier
+import com.lenzorium.expenses.ui.screens.BillsScreen
+import com.lenzorium.expenses.ui.screens.BudgetsScreen
+import com.lenzorium.expenses.ui.screens.GoalDetailScreen
+import com.lenzorium.expenses.ui.screens.GoalsScreen
+import com.lenzorium.expenses.ui.screens.PlanRoutes
+import com.lenzorium.expenses.ui.screens.RecurringFormScreen
+import com.lenzorium.expenses.ui.screens.ShortcutsScreen
 
 object Routes {
     const val HOME = "home"
@@ -134,7 +149,7 @@ object Routes {
 }
 
 @Composable
-fun AppRoot(repo: Repository, locked: MutableState<Boolean>) {
+fun AppRoot(repo: Repository, locked: MutableState<Boolean>, pendingRoute: MutableState<String?> = remember { mutableStateOf(null) }) {
     val vm: MainViewModel = viewModel(factory = MainViewModel.factory(repo))
     val state by vm.state.collectAsStateWithLifecycle()
     LenzoriumTheme(state.settings.themeMode) {
@@ -142,7 +157,7 @@ fun AppRoot(repo: Repository, locked: MutableState<Boolean>) {
             when {
                 !state.loaded -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 !state.settings.setupDone -> SetupWithRestore(repo)
-                else -> MainShell(repo, state)
+                else -> MainShell(repo, state, pendingRoute = pendingRoute)
             }
             if (locked.value && state.settings.lockEnabled) {
                 LockScreen(repo.settings) { locked.value = false }
@@ -180,10 +195,10 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 
 private val tabs = listOf(
     Tab(Routes.HOME, "Home", Icons.Rounded.Home),
-    Tab(Routes.TXNS, "Transactions", Icons.AutoMirrored.Rounded.ReceiptLong),
+    Tab(Routes.TXNS, "Activity", Icons.AutoMirrored.Rounded.ReceiptLong),
     Tab("add", "Add", Icons.Rounded.AddCircle),
-    Tab(Routes.REPORTS, "Reports", Icons.Rounded.BarChart),
-    Tab(Routes.SETTINGS, "Settings", Icons.Rounded.Settings),
+    Tab(Routes.REPORTS, "Insights", Icons.Rounded.BarChart),
+    Tab(Routes.SETTINGS, "More", Icons.Rounded.GridView),
 )
 
 fun NavController.goTab(route: String) {
@@ -195,8 +210,28 @@ fun NavController.goTab(route: String) {
 }
 
 @Composable
-internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String = Routes.HOME) {
+internal fun MainShell(
+    repo: Repository,
+    state: LedgerState,
+    startRoute: String = Routes.HOME,
+    pendingRoute: MutableState<String?>? = null,
+) {
     val nav = rememberNavController()
+    // Opened from a notification: go to bills or budgets once the app is unlocked and ready.
+    LaunchedEffect(pendingRoute?.value) {
+        val holder = pendingRoute ?: return@LaunchedEffect
+        val r = holder.value ?: return@LaunchedEffect
+        holder.value = null
+        when (r) {
+            "bills" -> nav.navigate(PlanRoutes.BILLS)
+            "budgets" -> nav.navigate(PlanRoutes.BUDGETS)
+        }
+    }
+    // Budget warnings as soon as an expense pushes a budget over 80% / 100%.
+    val appContext = LocalContext.current.applicationContext
+    LaunchedEffect(state.budgetStatuses) {
+        if (state.budgets.isNotEmpty()) runCatching { Notifier.budgetCrossings(appContext, state.budgetStatuses, state.categoryById) }
+    }
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     val showBar = route in setOf(Routes.HOME, Routes.TXNS, Routes.REPORTS, Routes.SETTINGS)
@@ -227,7 +262,7 @@ internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String 
         NavHost(nav, startDestination = startRoute, modifier = Modifier.padding(padding).consumeWindowInsets(padding)) {
             composable(Routes.HOME) {
                 HomeScreen(
-                    state, nav,
+                    state, nav, repo,
                     onDismissAccountsNotice = { repo.settings.update { it.copy(accountsNotice = false) } },
                 ) { repo.settings.update { it.copy(hideAmounts = !it.hideAmounts) } }
             }
@@ -248,10 +283,17 @@ internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String 
                 ),
             ) { e -> TransferScreen(repo, state, e.arguments?.getLong("id") ?: 0L, e.arguments?.getLong("from") ?: 0L, nav) }
             composable(
-                "entry/{type}?id={id}",
-                arguments = listOf(navArgument("type") { type = NavType.StringType }, navArgument("id") { type = NavType.LongType; defaultValue = 0L }),
+                "entry/{type}?id={id}&template={template}",
+                arguments = listOf(
+                    navArgument("type") { type = NavType.StringType },
+                    navArgument("id") { type = NavType.LongType; defaultValue = 0L },
+                    navArgument("template") { type = NavType.LongType; defaultValue = 0L },
+                ),
             ) { e ->
-                EntryScreen(repo, state, TxnType.valueOf(e.arguments?.getString("type") ?: "EXPENSE"), e.arguments?.getLong("id") ?: 0L, nav)
+                EntryScreen(
+                    repo, state, TxnType.valueOf(e.arguments?.getString("type") ?: "EXPENSE"), e.arguments?.getLong("id") ?: 0L, nav,
+                    templateId = e.arguments?.getLong("template") ?: 0L,
+                )
             }
             composable(
                 "loanForm?id={id}&existing={existing}",
@@ -284,6 +326,16 @@ internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String 
             composable("txn/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
                 TxnDetailScreen(state, repo, e.arguments?.getLong("id") ?: 0L, nav)
             }
+            composable(PlanRoutes.BUDGETS) { BudgetsScreen(state, repo, nav) }
+            composable(PlanRoutes.BILLS) { BillsScreen(state, repo, nav) }
+            composable(PlanRoutes.GOALS) { GoalsScreen(state, repo, nav) }
+            composable(PlanRoutes.SHORTCUTS) { ShortcutsScreen(state, repo, nav) }
+            composable("recurring?id={id}", arguments = listOf(navArgument("id") { type = NavType.LongType; defaultValue = 0L })) { e ->
+                RecurringFormScreen(state, repo, e.arguments?.getLong("id") ?: 0L, nav)
+            }
+            composable("goal/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
+                GoalDetailScreen(state, repo, e.arguments?.getLong("id") ?: 0L, nav)
+            }
         }
       }
     }
@@ -294,11 +346,26 @@ internal fun MainShell(repo: Repository, state: LedgerState, startRoute: String 
             val m = LocalMoneyColors.current
             Column(Modifier.navigationBarsPadding().padding(bottom = 16.dp)) {
                 Text("What would you like to record?", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp))
+                if (state.templates.isNotEmpty()) {
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        state.templates.forEach { t ->
+                            AssistChip(
+                                onClick = { addSheet = false; nav.navigate(PlanRoutes.template(t.id, t.type)) },
+                                label = { Text(t.name + if (t.amountMinor > 0) " · " + com.lenzorium.expenses.domain.Money.format(t.amountMinor, state.currency) else "") },
+                                leadingIcon = { Icon(Icons.Rounded.Bolt, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary) },
+                            )
+                        }
+                    }
+                }
                 AddOption(Icons.Rounded.RemoveCircle, m.expense, "Add Expense", "Record money you spent") { addSheet = false; nav.navigate(Routes.entry(TxnType.EXPENSE)) }
                 AddOption(Icons.Rounded.TrendingUp, m.income, "Add Income", "Salary, business, gifts and more") { addSheet = false; nav.navigate(Routes.entry(TxnType.INCOME)) }
                 AddOption(Icons.Rounded.SwapHoriz, MaterialTheme.colorScheme.primary, "Transfer", "Move money between Cash and Bank") { addSheet = false; nav.navigate(Routes.transfer()) }
                 AddOption(Icons.Rounded.AccountBalance, m.loan, "Take Loan", "Money you borrowed — adds to balance and debt") { addSheet = false; nav.navigate(Routes.loanForm()) }
                 AddOption(Icons.Rounded.Payments, m.loan, "Repay Loan", "Pay back part or all of a loan") { addSheet = false; nav.navigate(Routes.repay()) }
+                AddOption(Icons.Rounded.EventRepeat, MaterialTheme.colorScheme.primary, "Bill or subscription", "Rent, utilities, Netflix: get reminded when due") { addSheet = false; nav.navigate(PlanRoutes.recurring()) }
             }
         }
     }

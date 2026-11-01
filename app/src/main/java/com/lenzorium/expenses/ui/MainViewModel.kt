@@ -9,6 +9,17 @@ import com.lenzorium.expenses.data.Category
 import com.lenzorium.expenses.data.Loan
 import com.lenzorium.expenses.data.Repository
 import com.lenzorium.expenses.data.Txn
+import com.lenzorium.expenses.data.TxnType
+import com.lenzorium.expenses.data.Budget
+import com.lenzorium.expenses.data.Goal
+import com.lenzorium.expenses.data.GoalEntry
+import com.lenzorium.expenses.data.Recurring
+import com.lenzorium.expenses.data.Template
+import com.lenzorium.expenses.domain.BudgetStatus
+import com.lenzorium.expenses.domain.GoalProgress
+import com.lenzorium.expenses.domain.Occurrence
+import com.lenzorium.expenses.domain.PlanMath
+import java.time.YearMonth
 import com.lenzorium.expenses.domain.LedgerMath
 import com.lenzorium.expenses.domain.LoanSummary
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,7 +37,29 @@ data class LedgerState(
     val loans: List<Loan> = emptyList(),
     val categories: List<Category> = emptyList(),
     val accounts: List<Account> = emptyList(),
+    val plans: PlanData = PlanData(),
 ) {
+    val budgets get() = plans.budgets
+    val recurring get() = plans.recurring
+    val templates get() = plans.templates
+    val goals get() = plans.goals
+    val today: Long get() = LocalDate.now().toEpochDay()
+    val thisMonth: YearMonth get() = YearMonth.now()
+
+    val budgetStatuses: List<BudgetStatus> by lazy { budgets.map { PlanMath.status(it, txns, thisMonth) } }
+    val overallBudget: BudgetStatus? get() = budgetStatuses.firstOrNull { it.budget.categoryId == null }
+    val categoryBudgets: List<BudgetStatus> get() = budgetStatuses.filter { it.budget.categoryId != null }
+    /** Bills/income due within the next 30 days, overdue first. */
+    val upcoming: List<Occurrence> by lazy { PlanMath.upcoming(recurring, today + 30) }
+    val dueNow: List<Recurring> get() = recurring.filter { it.active && it.nextDueEpochDay <= today }
+    val goalProgress: List<GoalProgress> by lazy { goals.filter { !it.archived }.map { PlanMath.goalProgress(it, plans.goalEntries) } }
+    val setAside: Long get() = goalProgress.sumOf { it.saved }
+    val monthSpent: Long by lazy { PlanMath.monthlyExpenses(txns, thisMonth, 1).first().second }
+    val lastMonthSpent: Long by lazy { PlanMath.monthlyExpenses(txns, thisMonth.minusMonths(1), 1).first().second }
+    val merchantsExpense: List<String> by lazy { PlanMath.merchants(txns, TxnType.EXPENSE) }
+    val merchantsIncome: List<String> by lazy { PlanMath.merchants(txns, TxnType.INCOME) }
+    val allTags: List<String> by lazy { txns.flatMap { it.tagList }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key } }
+
     val currency get() = settings.currency
     val categoryById: Map<Long, Category> by lazy { categories.associateBy { it.id } }
     val loanById: Map<Long, Loan> by lazy { loans.associateBy { it.id } }
@@ -53,10 +86,20 @@ data class LedgerState(
     fun summary(loanId: Long): LoanSummary? = loanSummaries.firstOrNull { it.loan.id == loanId }
 }
 
+data class PlanData(
+    val budgets: List<Budget> = emptyList(),
+    val recurring: List<Recurring> = emptyList(),
+    val templates: List<Template> = emptyList(),
+    val goals: List<Goal> = emptyList(),
+    val goalEntries: List<GoalEntry> = emptyList(),
+)
+
 class MainViewModel(val repo: Repository) : ViewModel() {
-    val state: StateFlow<LedgerState> = combine(
+    private val plans = combine(repo.budgets, repo.recurring, repo.templates, repo.goals, repo.goalEntries) { b, r, t, g, e -> PlanData(b, r, t, g, e) }
+    private val ledger = combine(
         repo.settings.state, repo.txns, repo.loans, repo.categories, repo.accounts,
     ) { s, t, l, c, a -> LedgerState(true, s, t, l, c, a) }
+    val state: StateFlow<LedgerState> = combine(ledger, plans) { l, p -> l.copy(plans = p) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, LedgerState(settings = repo.settings.current))
 
     init {

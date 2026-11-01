@@ -31,6 +31,12 @@ data class AppSettings(
     val accountsMigrated: Boolean = false,
     /** Show a one-time note on Home asking the user to check their Cash/Bank split. */
     val accountsNotice: Boolean = false,
+    /** Daily notification for bills that are due. */
+    val remindersEnabled: Boolean = true,
+    /** Notify when a budget reaches 80% and 100%. */
+    val budgetAlerts: Boolean = true,
+    /** Home shows a monthly budget card (hidden until the user creates one). */
+    val homeShowInsights: Boolean = true,
 ) {
     val currency: CurrencyInfo get() = Currencies.find(currencyCode)
     val lockEnabled: Boolean get() = pinHash != null
@@ -56,6 +62,9 @@ class SettingsStore(context: Context) {
         lastBackupAt = prefs.getLong(K_LAST_BACKUP, 0L),
         accountsMigrated = prefs.getBoolean(K_ACC_MIGRATED, false),
         accountsNotice = prefs.getBoolean(K_ACC_NOTICE, false),
+        remindersEnabled = prefs.getBoolean(K_REMINDERS, true),
+        budgetAlerts = prefs.getBoolean(K_BUDGET_ALERTS, true),
+        homeShowInsights = prefs.getBoolean(K_HOME_INSIGHTS, true),
     )
 
     @Synchronized
@@ -76,8 +85,19 @@ class SettingsStore(context: Context) {
             .putLong(K_LAST_BACKUP, s.lastBackupAt)
             .putBoolean(K_ACC_MIGRATED, s.accountsMigrated)
             .putBoolean(K_ACC_NOTICE, s.accountsNotice)
+            .putBoolean(K_REMINDERS, s.remindersEnabled)
+            .putBoolean(K_BUDGET_ALERTS, s.budgetAlerts)
+            .putBoolean(K_HOME_INSIGHTS, s.homeShowInsights)
             .commit()
         _state.value = s
+    }
+
+    /** Remembers which budget warnings were already shown, e.g. "2026-11:5:80". */
+    fun alreadyAlerted(key: String): Boolean = prefs.getStringSet(K_ALERTED, emptySet())!!.contains(key)
+    fun markAlerted(key: String) {
+        val month = key.substringBefore(':')
+        val kept = prefs.getStringSet(K_ALERTED, emptySet())!!.filter { it.startsWith(month) }.toSet()
+        prefs.edit().putStringSet(K_ALERTED, kept + key).apply()
     }
 
     fun setPin(pin: String) {
@@ -107,6 +127,12 @@ class SettingsStore(context: Context) {
         private const val K_LAST_BACKUP = "last_backup"
         private const val K_ACC_MIGRATED = "accounts_migrated"
         private const val K_ACC_NOTICE = "accounts_notice"
+        private const val K_REMINDERS = "reminders"
+        private const val K_BUDGET_ALERTS = "budget_alerts"
+        private const val K_HOME_INSIGHTS = "home_insights"
+
+        /** Small notification bookkeeping kept out of [AppSettings]. */
+        const val K_ALERTED = "budget_alerted"
 
         fun hash(pin: String, salt: String): String {
             // Iterated SHA-256; PIN never stored in plain text.

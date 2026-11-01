@@ -1,5 +1,6 @@
 package com.lenzorium.expenses.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -58,6 +59,8 @@ data class Account(
     /** Hidden from pickers but kept so old entries still show where the money went. */
     val archived: Boolean = false,
     val sortOrder: Int = 0,
+    /** ISO code when this account holds a different currency from the ledger (e.g. GBP); null = ledger currency. */
+    val currency: String? = null,
 )
 
 @Entity(tableName = "categories")
@@ -122,7 +125,19 @@ data class Txn(
     val accountId: Long? = null,
     /** Destination account of a transfer. */
     val toAccountId: Long? = null,
-)
+    /** Lower-case tags separated by commas, e.g. "family,work". */
+    @ColumnInfo(defaultValue = "") val tags: String = "",
+    /** The bill or regular income this entry paid, if any. */
+    val recurringId: Long? = null,
+) {
+    val tagList: List<String> get() = Tags.parse(tags)
+}
+
+object Tags {
+    fun parse(s: String): List<String> = s.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+    fun clean(raw: String): String = raw.trim().removePrefix("#").lowercase().replace(Regex("[^\\p{L}\\p{N} _-]"), "").trim().take(30)
+    fun join(list: List<String>): String = list.map(::clean).filter { it.isNotEmpty() }.distinct().joinToString(",")
+}
 
 class Converters {
     @TypeConverter fun txnTypeToString(v: TxnType): String = v.name
@@ -133,4 +148,6 @@ class Converters {
     @TypeConverter fun stringToKind(v: String): CategoryKind = CategoryKind.valueOf(v)
     @TypeConverter fun accountKindToString(v: AccountKind): String = v.name
     @TypeConverter fun stringToAccountKind(v: String): AccountKind = AccountKind.valueOf(v)
+    @TypeConverter fun freqToString(v: Frequency): String = v.name
+    @TypeConverter fun stringToFreq(v: String): Frequency = Frequency.valueOf(v)
 }
