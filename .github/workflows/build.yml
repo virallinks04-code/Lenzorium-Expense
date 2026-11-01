@@ -27,10 +27,30 @@ jobs:
       # The release key lives only in encrypted repository secrets, never in the code.
       - name: Restore signing key
         if: env.HAS_KEY == 'true'
+        env:
+          KEY_B64: ${{ secrets.LENZORIUM_KEYSTORE_BASE64 }}
+          KEY_PW: ${{ secrets.LENZORIUM_KEYSTORE_PASSWORD }}
         run: |
-          echo "${{ secrets.LENZORIUM_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          mkdir -p ci-diag
+          # Tolerate copy-paste extras: dashes, spaces, line breaks, "Value:" labels.
+          CLEAN=$(printf '%s' "$KEY_B64" | sed 's/-----//g; s/Value[^:]*://g' | tr -cd 'A-Za-z0-9+/=')
+          PW=$(printf '%s' "$KEY_PW" | sed 's/^[[:space:]]*Value:[[:space:]]*//' | tr -d '\r\n' | sed 's/[[:space:]]*$//; s/^[[:space:]]*//')
+          {
+            echo "key secret length: ${#KEY_B64}, cleaned length: ${#CLEAN}"
+            echo "password secret length: ${#KEY_PW}, cleaned length: ${#PW}"
+          } > ci-diag/signing.txt
+          if ! printf '%s' "$CLEAN" | base64 -d > "$RUNNER_TEMP/release.jks" 2>/dev/null; then
+            echo "RESULT: key text could not be decoded" >> ci-diag/signing.txt; exit 1
+          fi
+          if ! keytool -list -keystore "$RUNNER_TEMP/release.jks" -storepass "$PW" -alias lenzorium > /dev/null 2>&1; then
+            echo "RESULT: key decoded, but the password does not open it" >> ci-diag/signing.txt; exit 1
+          fi
+          echo "RESULT: key and password OK" >> ci-diag/signing.txt
           echo "LENZORIUM_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
           echo "LENZORIUM_KEY_ALIAS=lenzorium" >> "$GITHUB_ENV"
+          echo "::add-mask::$PW"
+          echo "LENZORIUM_KEYSTORE_PASSWORD=$PW" >> "$GITHUB_ENV"
+          echo "LENZORIUM_KEY_PASSWORD=$PW" >> "$GITHUB_ENV"
 
       - name: Run calculation tests and render screenshots
         run: |
@@ -38,9 +58,6 @@ jobs:
           ./gradlew --no-daemon testDebugUnitTest 2>&1 | tee test-log.txt
 
       - name: Build release APK and Play Store bundle
-        env:
-          LENZORIUM_KEYSTORE_PASSWORD: ${{ secrets.LENZORIUM_KEYSTORE_PASSWORD }}
-          LENZORIUM_KEY_PASSWORD: ${{ secrets.LENZORIUM_KEYSTORE_PASSWORD }}
         run: |
           set -o pipefail
           ./gradlew --no-daemon assembleRelease bundleRelease 2>&1 | tee build-log.txt
@@ -61,6 +78,7 @@ jobs:
           cp app/build/screenshots/*.png /tmp/ci/screens/ 2>/dev/null || true
           cp app/build/test-results/testDebugUnitTest/*.xml /tmp/ci/tests/ 2>/dev/null || true
           cp test-log.txt build-log.txt /tmp/ci/ 2>/dev/null || true
+          cp ci-diag/signing.txt /tmp/ci/ 2>/dev/null || true
           echo "run ${{ github.run_number }} ${{ github.sha }} ${{ job.status }}" > /tmp/ci/RUN.txt
           cd /tmp/ci
           git init -q -b ci-output
