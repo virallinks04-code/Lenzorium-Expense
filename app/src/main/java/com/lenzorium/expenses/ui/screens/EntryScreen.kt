@@ -54,6 +54,9 @@ import com.lenzorium.expenses.data.PayMethod
 import com.lenzorium.expenses.data.Repository
 import com.lenzorium.expenses.data.SaveResult
 import com.lenzorium.expenses.data.Txn
+import com.lenzorium.expenses.domain.ReceiptGuess
+import com.lenzorium.expenses.ui.ReceiptScan
+import androidx.compose.material.icons.rounded.DocumentScanner
 import com.lenzorium.expenses.data.Tags
 import com.lenzorium.expenses.data.Template
 import com.lenzorium.expenses.domain.PlanMath
@@ -123,7 +126,7 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
         if (editId != 0L) viewModelScope.launch {
             repo.txn(editId)?.let { t ->
                 original = t
-                val d = repo.settings.current.currency.decimals
+                val d = repo.currencyOf(t.accountId).decimals
                 amount = Money.toInput(t.amountMinor, d)
                 categoryId = t.categoryId
                 timestamp = t.timestamp
@@ -141,7 +144,7 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
             loaded = false
             viewModelScope.launch {
                 repo.template(templateId)?.let { t ->
-                    if (t.amountMinor > 0) amount = Money.toInput(t.amountMinor, repo.settings.current.currency.decimals)
+                    if (t.amountMinor > 0) amount = Money.toInput(t.amountMinor, repo.currencyOf(t.accountId).decimals)
                     categoryId = t.categoryId
                     party = t.party
                     t.accountId?.let { accountId = it }
@@ -160,7 +163,7 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
     }
 
     fun currentTemplate(state: LedgerState): Template {
-        val minor = Money.parse(amount, state.currency.decimals) ?: 0L
+        val minor = Money.parse(amount, state.currencyOf(accountId).decimals) ?: 0L
         val name = party.trim().ifEmpty { categoryId?.let { state.categoryById[it]?.name } ?: if (type == TxnType.EXPENSE) "Expense" else "Income" }
         return Template(name = name, type = type, amountMinor = minor.coerceAtLeast(0), categoryId = categoryId, accountId = accountId, party = party.trim(), tags = Tags.join(tags))
     }
@@ -177,7 +180,7 @@ class EntryViewModel(private val repo: Repository, val type: TxnType, private va
     fun save(state: LedgerState, confirmed: Boolean, duplicateOk: Boolean = confirmed) {
         if (saving || done) return
         error = null
-        val d = repo.settings.current.currency.decimals
+        val d = state.currencyOf(accountId).decimals
         val minor = Money.parse(amount, d)
         when {
             minor == null -> { error = if (amount.isBlank()) "Enter an amount." else "Enter a valid amount (up to $d decimal places)."; return }
@@ -230,12 +233,14 @@ fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Lon
     val vm: EntryViewModel = viewModel(factory = simpleFactory { EntryViewModel(repo, type, editId, templateId) })
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val c = state.currency
+    val c = state.currencyOf(vm.accountId)
     val isExpense = type == TxnType.EXPENSE
     val kind = if (isExpense) CategoryKind.EXPENSE else CategoryKind.INCOME
     val cats = state.categories.filter { it.kind == kind }
     var addCat by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
+    var scanning by remember { mutableStateOf(false) }
+    var guess by remember { mutableStateOf<ReceiptGuess?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     val focus = remember { FocusRequester() }
 
@@ -343,6 +348,22 @@ fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Lon
                                     Icon(Icons.Rounded.Close, "Remove receipt", Modifier.size(18.dp))
                                 }
                             }
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(enabled = !scanning, onClick = {
+                                scanning = true
+                                scope.launch {
+                                    ReceiptScan.read(context, repo.receiptFile(r), c.decimals).fold(
+                                        { g -> if (g.totalMinor == null && g.date == null && g.merchant == null) vm.error = "Couldn't read any text on this photo. Try a sharper, well-lit picture." else guess = g },
+                                        { vm.error = "Couldn't read the receipt on this phone." },
+                                    )
+                                    scanning = false
+                                }
+                            }) {
+                                if (scanning) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                else Icon(Icons.Rounded.DocumentScanner, null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp)); Text(if (scanning) "Reading…" else "Read amount from receipt")
+                            }
+                            Text("Read on your phone. Nothing is uploaded.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else if (importing) {
                             CircularProgressIndicator(Modifier.size(32.dp))
                         } else {
@@ -365,6 +386,38 @@ fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Lon
         }
     }
 
+    guess?.let { g ->
+        var useAmount by remember(g) { mutableStateOf(g.totalMinor != null) }
+        var useDate by remember(g) { mutableStateOf(g.date != null) }
+        var useMerchant by remember(g) { mutableStateOf(g.merchant != null && vm.party.isBlank()) }
+        AlertDialog(
+            onDismissRequest = { guess = null },
+            title = { Text("Found on the receipt") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Check these before using them. Untick anything that's wrong.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    g.totalMinor?.let {
+                        ScanRow(useAmount, { useAmount = it }, "Amount", Money.format(it, c), if (g.totalConfident) null else "Best guess: the largest number on the receipt")
+                    }
+                    g.date?.let { ScanRow(useDate, { useDate = it }, "Date", com.lenzorium.expenses.ui.components.Dates.date(it), null) }
+                    g.merchant?.let { ScanRow(useMerchant, { useMerchant = it }, "Shop", it, null) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (useAmount) g.totalMinor?.let { vm.amount = Money.toInput(it, c.decimals) }
+                    if (useMerchant) g.merchant?.let { vm.pickMerchant(it, state) }
+                    if (useDate) g.date?.let { d ->
+                        val time = com.lenzorium.expenses.ui.components.Dates.localDateTime(vm.timestamp).toLocalTime()
+                        val start = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay)
+                        if (!d.isBefore(start)) vm.timestamp = d.atTime(time).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli().coerceAtMost(System.currentTimeMillis())
+                    }
+                    guess = null
+                }) { Text("Use selected") }
+            },
+            dismissButton = { TextButton(onClick = { guess = null }) { Text("Cancel") } },
+        )
+    }
     vm.confirmDuplicate?.let { msg ->
         ConfirmDialog(
             title = "Possible duplicate",
@@ -397,5 +450,18 @@ fun EntryScreen(repo: Repository, state: LedgerState, type: TxnType, editId: Lon
             },
             onDismiss = { addCat = false },
         )
+    }
+}
+
+
+@Composable
+private fun ScanRow(checked: Boolean, onChange: (Boolean) -> Unit, label: String, value: String, note: String?) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.Checkbox(checked, onChange)
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, style = MaterialTheme.typography.titleSmall)
+            note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = com.lenzorium.expenses.ui.theme.LocalMoneyColors.current.warning) }
+        }
     }
 }

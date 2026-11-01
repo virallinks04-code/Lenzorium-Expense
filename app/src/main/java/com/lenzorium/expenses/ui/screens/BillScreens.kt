@@ -236,7 +236,7 @@ fun PayBillDialog(state: LedgerState, repo: Repository, r: Recurring, onDone: ()
     val scope = rememberCoroutineScope()
     val messenger = LocalMessenger.current
     var amount by remember { mutableStateOf(Money.toInput(r.amountMinor, c.decimals)) }
-    var accountId by remember { mutableStateOf(r.accountId?.takeIf { id -> state.accountById[id]?.archived == false } ?: state.activeAccounts.firstOrNull()?.id) }
+    var accountId by remember { mutableStateOf(r.accountId?.takeIf { id -> state.accountById[id]?.archived == false } ?: state.activeLedgerAccounts.firstOrNull()?.id) }
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     val income = r.type == TxnType.INCOME
@@ -250,7 +250,7 @@ fun PayBillDialog(state: LedgerState, repo: Repository, r: Recurring, onDone: ()
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 AmountField(amount, { amount = it }, c)
-                AccountSelector(state.activeAccounts, accountId, { accountId = it }, state.accountBalances, c, if (income) "Received into" else "Paid from")
+                AccountSelector(state.activeLedgerAccounts, accountId, { accountId = it }, state.accountBalances, c, if (income) "Received into" else "Paid from")
                 ErrorBanner(error)
             }
         },
@@ -289,7 +289,7 @@ fun RecurringFormScreen(state: LedgerState, repo: Repository, editId: Long, nav:
     var name by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var categoryId by remember { mutableStateOf<Long?>(null) }
-    var accountId by remember { mutableStateOf(state.activeAccounts.firstOrNull()?.id) }
+    var accountId by remember { mutableStateOf(state.activeLedgerAccounts.firstOrNull()?.id) }
     var frequency by remember { mutableStateOf(Frequency.MONTHLY) }
     var interval by remember { mutableStateOf("1") }
     var start by remember { mutableStateOf(LocalDate.now()) }
@@ -366,7 +366,7 @@ fun RecurringFormScreen(state: LedgerState, repo: Repository, editId: Long, nav:
                 CategoryGrid(state.categories.filter { it.kind == if (income) CategoryKind.INCOME else CategoryKind.EXPENSE }, categoryId, { categoryId = it })
             }
             FormSection {
-                AccountSelector(state.activeAccounts, accountId, { accountId = it }, state.accountBalances, c, if (income) "Usually received into" else "Usually paid from")
+                AccountSelector(state.activeLedgerAccounts, accountId, { accountId = it }, state.accountBalances, c, if (income) "Usually received into" else "Usually paid from")
             }
             FormSection {
                 Text("Repeats", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)

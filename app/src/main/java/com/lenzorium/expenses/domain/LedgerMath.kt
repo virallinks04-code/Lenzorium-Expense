@@ -30,6 +30,8 @@ data class PeriodTotals(
     /** categoryId (null = uncategorised) -> total expense */
     val expensesByCategory: Map<Long?, Long>,
     val incomeByCategory: Map<Long?, Long>,
+    /** Money moved into (+) or out of (−) the main currency through transfers with foreign-currency accounts. */
+    val exchangeNet: Long = 0L,
 )
 
 /**
@@ -41,19 +43,37 @@ data class PeriodTotals(
  */
 object LedgerMath {
 
-    /** Effect of a transaction on total available money. Loan charges change debt only; transfers just move money. */
-    fun cashDelta(t: Txn): Long = when (t.type) {
-        TxnType.INCOME, TxnType.LOAN_RECEIVED -> t.amountMinor
-        TxnType.EXPENSE, TxnType.LOAN_REPAYMENT -> -t.amountMinor
-        TxnType.LOAN_CHARGE, TxnType.TRANSFER -> 0L
+    /**
+     * Effect of a transaction on total available money in the main currency. Loan charges change debt only;
+     * transfers just move money. Accounts in [foreign] hold another currency and are kept out of the total:
+     * their own entries count 0, and a transfer to/from one counts as money leaving/arriving (an exchange).
+     */
+    fun cashDelta(t: Txn, foreign: Set<Long> = emptySet()): Long = when (t.type) {
+        TxnType.TRANSFER -> {
+            val fromForeign = t.accountId in foreign
+            val toForeign = t.toAccountId in foreign
+            when {
+                !fromForeign && toForeign -> -t.amountMinor
+                fromForeign && !toForeign -> t.toAmountMinor ?: t.amountMinor
+                else -> 0L
+            }
+        }
+        TxnType.LOAN_CHARGE -> 0L
+        else -> if (t.accountId != null && t.accountId in foreign) 0L else when (t.type) {
+            TxnType.INCOME, TxnType.LOAN_RECEIVED -> t.amountMinor
+            else -> -t.amountMinor
+        }
     }
+
+    /** Amount that arrives in the destination account of a transfer (differs only across currencies). */
+    fun received(t: Txn): Long = t.toAmountMinor ?: t.amountMinor
 
     /** Effect of a transaction on one account's balance. */
     fun accountDelta(t: Txn, accountId: Long): Long = when (t.type) {
         TxnType.INCOME, TxnType.LOAN_RECEIVED -> if (t.accountId == accountId) t.amountMinor else 0L
         TxnType.EXPENSE, TxnType.LOAN_REPAYMENT -> if (t.accountId == accountId) -t.amountMinor else 0L
         TxnType.TRANSFER ->
-            (if (t.toAccountId == accountId) t.amountMinor else 0L) - (if (t.accountId == accountId) t.amountMinor else 0L)
+            (if (t.toAccountId == accountId) received(t) else 0L) - (if (t.accountId == accountId) t.amountMinor else 0L)
         TxnType.LOAN_CHARGE -> 0L
     }
 
@@ -70,10 +90,10 @@ object LedgerMath {
     fun totalOpening(accounts: List<Account>): Long = accounts.sumOf { it.openingMinor }
 
     /** Available balance including every transaction with timestamp < [beforeMillis] (all if null). */
-    fun availableBalance(openingBalance: Long, txns: List<Txn>, beforeMillis: Long? = null): Long {
+    fun availableBalance(openingBalance: Long, txns: List<Txn>, beforeMillis: Long? = null, foreign: Set<Long> = emptySet()): Long {
         var total = openingBalance
         for (t in txns) {
-            if (beforeMillis == null || t.timestamp < beforeMillis) total = Math.addExact(total, cashDelta(t))
+            if (beforeMillis == null || t.timestamp < beforeMillis) total = Math.addExact(total, cashDelta(t, foreign))
         }
         return total
     }
@@ -152,7 +172,8 @@ object LedgerMath {
     }
 
     /** Totals for transactions with start <= timestamp < endExclusive. */
-    fun periodTotals(txns: List<Txn>, start: Long, endExclusive: Long): PeriodTotals {
+    fun periodTotals(txns: List<Txn>, start: Long, endExclusive: Long, foreign: Set<Long> = emptySet()): PeriodTotals {
+        var exchange = 0L
         var income = 0L
         var expenses = 0L
         var borrowed = 0L
@@ -162,6 +183,8 @@ object LedgerMath {
         val incByCat = HashMap<Long?, Long>()
         for (t in txns) {
             if (t.timestamp < start || t.timestamp >= endExclusive) continue
+            if (t.type == TxnType.TRANSFER) { exchange += cashDelta(t, foreign); continue }
+            if (t.accountId != null && t.accountId in foreign) continue
             when (t.type) {
                 TxnType.EXPENSE -> {
                     expenses += t.amountMinor
@@ -177,6 +200,6 @@ object LedgerMath {
                 TxnType.TRANSFER -> Unit
             }
         }
-        return PeriodTotals(income, expenses, borrowed, repayments, charges, byCat, incByCat)
+        return PeriodTotals(income, expenses, borrowed, repayments, charges, byCat, incByCat, exchange)
     }
 }

@@ -163,11 +163,14 @@ fun txnColor(type: TxnType): Color {
 }
 
 /** Signed amount text as it affects available cash ("debt +" for charges). */
-fun txnAmountText(t: Txn, c: CurrencyInfo): String =
+fun txnAmountText(t: Txn, c: CurrencyInfo, toCurrency: CurrencyInfo? = null): String =
     when (t.type) {
         TxnType.LOAN_CHARGE -> "Debt +${Money.number(t.amountMinor, c.decimals)} ${c.code}"
-        TxnType.TRANSFER -> Money.format(t.amountMinor, c)
-        else -> Money.formatSigned(LedgerMath.cashDelta(t), c)
+        TxnType.TRANSFER ->
+            if (toCurrency != null && toCurrency.code != c.code) "${Money.format(t.amountMinor, c)} → ${Money.format(LedgerMath.received(t), toCurrency)}"
+            else Money.format(t.amountMinor, c)
+        // The amount's own sign, in the currency of the account it belongs to.
+        else -> Money.formatSigned(LedgerMath.cashDelta(t.copy(accountId = null)), c)
     }
 
 // ---------- Building blocks ----------
@@ -185,7 +188,7 @@ fun IconBadge(icon: ImageVector, tint: Color, modifier: Modifier = Modifier, siz
 }
 
 @Composable
-fun TxnRow(t: Txn, cat: Category?, currency: CurrencyInfo, onClick: () -> Unit, showDate: Boolean = false, account: String? = null) {
+fun TxnRow(t: Txn, cat: Category?, currency: CurrencyInfo, onClick: () -> Unit, showDate: Boolean = false, account: String? = null, toCurrency: CurrencyInfo? = null) {
     val tint = when (t.type) {
         TxnType.EXPENSE, TxnType.INCOME -> cat?.let { Color(it.colorArgb) } ?: txnColor(t.type)
         TxnType.TRANSFER -> MaterialTheme.colorScheme.primary
@@ -216,7 +219,7 @@ fun TxnRow(t: Txn, cat: Category?, currency: CurrencyInfo, onClick: () -> Unit, 
         }
         Spacer(Modifier.width(8.dp))
         Text(
-            txnAmountText(t, currency),
+            txnAmountText(t, currency, toCurrency),
             style = MaterialTheme.typography.titleSmall,
             color = txnColor(t.type),
             textAlign = TextAlign.End,
@@ -397,7 +400,7 @@ fun AccountSelector(
                     Column {
                         Text(a.name, style = MaterialTheme.typography.titleSmall, color = if (sel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
                         Text(
-                            Money.format(balances[a.id] ?: 0L, currency),
+                            Money.format(balances[a.id] ?: 0L, a.currency?.let { com.lenzorium.expenses.domain.Currencies.find(it) } ?: currency),
                             style = MaterialTheme.typography.bodySmall,
                             color = if ((balances[a.id] ?: 0L) < 0) LocalMoneyColors.current.expense else MaterialTheme.colorScheme.onSurfaceVariant,
                         )

@@ -46,7 +46,7 @@ data class LedgerState(
     val today: Long get() = LocalDate.now().toEpochDay()
     val thisMonth: YearMonth get() = YearMonth.now()
 
-    val budgetStatuses: List<BudgetStatus> by lazy { budgets.map { PlanMath.status(it, txns, thisMonth) } }
+    val budgetStatuses: List<BudgetStatus> by lazy { budgets.map { PlanMath.status(it, ledgerTxns, thisMonth) } }
     val overallBudget: BudgetStatus? get() = budgetStatuses.firstOrNull { it.budget.categoryId == null }
     val categoryBudgets: List<BudgetStatus> get() = budgetStatuses.filter { it.budget.categoryId != null }
     /** Bills/income due within the next 30 days, overdue first. */
@@ -54,8 +54,8 @@ data class LedgerState(
     val dueNow: List<Recurring> get() = recurring.filter { it.active && it.nextDueEpochDay <= today }
     val goalProgress: List<GoalProgress> by lazy { goals.filter { !it.archived }.map { PlanMath.goalProgress(it, plans.goalEntries) } }
     val setAside: Long get() = goalProgress.sumOf { it.saved }
-    val monthSpent: Long by lazy { PlanMath.monthlyExpenses(txns, thisMonth, 1).first().second }
-    val lastMonthSpent: Long by lazy { PlanMath.monthlyExpenses(txns, thisMonth.minusMonths(1), 1).first().second }
+    val monthSpent: Long by lazy { PlanMath.monthlyExpenses(ledgerTxns, thisMonth, 1).first().second }
+    val lastMonthSpent: Long by lazy { PlanMath.monthlyExpenses(ledgerTxns, thisMonth.minusMonths(1), 1).first().second }
     val merchantsExpense: List<String> by lazy { PlanMath.merchants(txns, TxnType.EXPENSE) }
     val merchantsIncome: List<String> by lazy { PlanMath.merchants(txns, TxnType.INCOME) }
     val allTags: List<String> by lazy { txns.flatMap { it.tagList }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key } }
@@ -66,9 +66,21 @@ data class LedgerState(
     val accountById: Map<Long, Account> by lazy { accounts.associateBy { it.id } }
     val activeAccounts: List<Account> get() = accounts.filter { !it.archived }
 
-    /** Opening balance of the ledger = sum of the accounts' opening balances. */
-    val totalOpening: Long by lazy { LedgerMath.totalOpening(accounts) }
-    val available: Long by lazy { LedgerMath.availableBalance(totalOpening, txns) }
+    /** Accounts holding a currency other than the main one. They are never added into the main totals. */
+    val foreignIds: Set<Long> by lazy { accounts.filter { isForeign(it) }.map { it.id }.toSet() }
+    fun isForeign(a: Account): Boolean = a.currency != null && a.currency != settings.currencyCode
+    fun currencyOf(accountId: Long?): com.lenzorium.expenses.domain.CurrencyInfo =
+        accountId?.let { accountById[it] }?.currency?.let { com.lenzorium.expenses.domain.Currencies.find(it) } ?: currency
+    /** Currency an entry's amount is written in (the source account's for transfers). */
+    fun currencyFor(t: Txn): com.lenzorium.expenses.domain.CurrencyInfo = if (t.type == TxnType.LOAN_CHARGE) currency else currencyOf(t.accountId)
+    /** Accounts in the main currency: used for loans, bills, goals and budgets. */
+    val activeLedgerAccounts: List<Account> get() = activeAccounts.filter { it.id !in foreignIds }
+    /** Entries that count in the main currency (foreign-account entries left out; transfers kept). */
+    val ledgerTxns: List<Txn> by lazy { if (foreignIds.isEmpty()) txns else txns.filter { it.type == TxnType.TRANSFER || it.accountId == null || it.accountId !in foreignIds } }
+
+    /** Opening balance of the ledger = sum of the main-currency accounts' opening balances. */
+    val totalOpening: Long by lazy { LedgerMath.totalOpening(accounts.filter { it.id !in foreignIds }) }
+    val available: Long by lazy { LedgerMath.availableBalance(totalOpening, txns, foreign = foreignIds) }
     val accountBalances: Map<Long, Long> by lazy { accounts.associate { it.id to LedgerMath.accountBalance(it, txns) } }
     fun balanceOf(id: Long): Long = accountBalances[id] ?: 0L
     fun accountName(id: Long?): String? = id?.let { accountById[it]?.name }

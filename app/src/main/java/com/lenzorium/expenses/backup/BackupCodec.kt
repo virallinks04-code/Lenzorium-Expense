@@ -96,7 +96,7 @@ object BackupCodec {
                     put("receiptFile", t.receiptFile ?: JSONObject.NULL); put("loanId", t.loanId ?: JSONObject.NULL)
                     put("requestId", t.requestId); put("createdAt", t.createdAt)
                     put("accountId", t.accountId ?: JSONObject.NULL); put("toAccountId", t.toAccountId ?: JSONObject.NULL)
-                    put("tags", t.tags); put("recurringId", t.recurringId ?: JSONObject.NULL)
+                    put("tags", t.tags); put("recurringId", t.recurringId ?: JSONObject.NULL); put("toAmountMinor", t.toAmountMinor ?: JSONObject.NULL)
                 })
             }
         })
@@ -160,6 +160,11 @@ object BackupCodec {
         try {
             val s = root.getJSONObject("settings")
             val code = s.getString("currencyCode")
+            root.optJSONArray("accounts")?.let { a ->
+                for (i in 0 until a.length()) a.getJSONObject(i).optStringOrNull("currency")?.let { cc ->
+                    if (Currencies.all.none { it.code == cc }) throw BackupFormatException("Unknown currency in backup: $cc")
+                }
+            }
             if (Currencies.all.none { it.code == code }) throw BackupFormatException("Unknown currency in backup: $code")
             val settings = AppSettings(
                 setupDone = true,
@@ -206,7 +211,7 @@ object BackupCodec {
                         receiptFile = o.optStringOrNull("receiptFile"), loanId = o.optLongOrNull("loanId"),
                         requestId = o.getString("requestId"), createdAt = o.getLong("createdAt"),
                         accountId = o.optLongOrNull("accountId"), toAccountId = o.optLongOrNull("toAccountId"),
-                        tags = o.optString("tags", ""), recurringId = o.optLongOrNull("recurringId"),
+                        tags = o.optString("tags", ""), recurringId = o.optLongOrNull("recurringId"), toAmountMinor = o.optLongOrNull("toAmountMinor"),
                     )
                 }
             }
@@ -295,7 +300,7 @@ object BackupCodec {
             throw BackupFormatException("The backup contains duplicate records.")
         if (loans.any { it.principalMinor <= 0 }) throw BackupFormatException("The backup contains an invalid loan amount.")
         for (t in txns) {
-            if (t.amountMinor <= 0) throw BackupFormatException("The backup contains an invalid amount.")
+            if (t.amountMinor <= 0 || (t.toAmountMinor != null && t.toAmountMinor <= 0)) throw BackupFormatException("The backup contains an invalid amount.")
             if (t.categoryId != null && t.categoryId !in catIds) throw BackupFormatException("A transaction refers to a missing category.")
             if (t.type.isLoanRelated && (t.loanId == null || t.loanId !in loanIds)) throw BackupFormatException("A loan entry refers to a missing loan.")
             t.receiptFile?.let { if (!isSafeName(it)) throw BackupFormatException("The backup contains an invalid file name.") }

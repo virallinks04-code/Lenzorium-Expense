@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
@@ -92,6 +93,8 @@ import java.util.UUID
 
 class TransferViewModel(private val repo: Repository, private val editId: Long) : ViewModel() {
     var amount by mutableStateOf("")
+    /** Amount that arrived, when the two accounts hold different currencies. */
+    var received by mutableStateOf("")
     var fromId by mutableStateOf<Long?>(null)
     var toId by mutableStateOf<Long?>(null)
     var timestamp by mutableStateOf(System.currentTimeMillis())
@@ -105,7 +108,7 @@ class TransferViewModel(private val repo: Repository, private val editId: Long) 
     private val requestId = UUID.randomUUID().toString()
     val isEdit get() = editId != 0L
 
-    private fun snapshot() = listOf(amount, timestamp, notes).toString()
+    private fun snapshot() = listOf(amount, received, timestamp, notes).toString()
     private var initial: String? = if (editId == 0L) snapshot() else null
     val dirty: Boolean get() = loaded && !done && initial != null && snapshot() != initial
 
@@ -113,7 +116,8 @@ class TransferViewModel(private val repo: Repository, private val editId: Long) 
         if (editId != 0L) viewModelScope.launch {
             repo.txn(editId)?.let { t ->
                 original = t
-                amount = Money.toInput(t.amountMinor, repo.settings.current.currency.decimals)
+                amount = Money.toInput(t.amountMinor, repo.currencyOf(t.accountId).decimals)
+                t.toAmountMinor?.let { received = Money.toInput(it, repo.currencyOf(t.toAccountId).decimals) }
                 fromId = t.accountId; toId = t.toAccountId
                 timestamp = t.timestamp; notes = t.notes
             }
@@ -127,12 +131,17 @@ class TransferViewModel(private val repo: Repository, private val editId: Long) 
     fun save(state: LedgerState, confirmed: Boolean) {
         if (saving || done) return
         error = null
-        val minor = Money.parse(amount, repo.settings.current.currency.decimals)
+        val fromCur = state.currencyOf(fromId)
+        val toCur = state.currencyOf(toId)
+        val cross = fromCur.code != toCur.code
+        val minor = Money.parse(amount, fromCur.decimals)
+        val got = if (cross) Money.parse(received, toCur.decimals) else null
         when {
             minor == null -> { error = if (amount.isBlank()) "Enter an amount." else "Enter a valid amount."; return }
             minor <= 0 -> { error = "Enter an amount greater than zero."; return }
             fromId == null || toId == null -> { error = "Choose both accounts."; return }
             fromId == toId -> { error = "Choose two different accounts."; return }
+            cross && (got == null || got <= 0) -> { error = "Enter how much arrived in ${toCur.code}."; return }
         }
         val o = original
         val txn = Txn(
@@ -145,6 +154,7 @@ class TransferViewModel(private val repo: Repository, private val editId: Long) 
             createdAt = o?.createdAt ?: System.currentTimeMillis(),
             accountId = fromId,
             toAccountId = toId,
+            toAmountMinor = got,
         )
         if (!confirmed) negativeWarning(state, o, txn)?.let { confirmNegative = it; return }
         confirmNegative = null
@@ -162,7 +172,9 @@ class TransferViewModel(private val repo: Repository, private val editId: Long) 
 @Composable
 fun TransferScreen(repo: Repository, state: LedgerState, editId: Long, presetFrom: Long, nav: NavController) {
     val vm: TransferViewModel = viewModel(factory = simpleFactory { TransferViewModel(repo, editId) })
-    val c = state.currency
+    val c = state.currencyOf(vm.fromId)
+    val toCur = state.currencyOf(vm.toId)
+    val cross = c.code != toCur.code
     val messenger = LocalMessenger.current
     val view = LocalView.current
     LaunchedEffect(vm.loaded, state.accounts) {
@@ -203,7 +215,7 @@ fun TransferScreen(repo: Repository, state: LedgerState, editId: Long, presetFro
             Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            HeroAmountInput(vm.amount, { vm.amount = it }, c, MaterialTheme.colorScheme.primary, label = "Amount to move", modifier = Modifier.padding(vertical = 12.dp))
+            HeroAmountInput(vm.amount, { vm.amount = it }, c, MaterialTheme.colorScheme.primary, label = if (cross) "Amount sent" else "Amount to move", modifier = Modifier.padding(vertical = 12.dp))
             FormSection {
                 AccountSelector(pickable, vm.fromId, { id -> if (id == vm.toId) vm.swap() else vm.fromId = id }, state.accountBalances, c, label = "From")
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -211,12 +223,27 @@ fun TransferScreen(repo: Repository, state: LedgerState, editId: Long, presetFro
                 }
                 AccountSelector(pickable, vm.toId, { id -> if (id == vm.fromId) vm.swap() else vm.toId = id }, state.accountBalances, c, label = "To")
             }
+            if (cross) {
+                FormSection {
+                    AmountField(vm.received, { vm.received = it }, toCur, label = "Amount received in ${toCur.code}")
+                    val sent = Money.parse(vm.amount, c.decimals); val got = Money.parse(vm.received, toCur.decimals)
+                    if (sent != null && got != null && sent > 0 && got > 0) {
+                        val rate = java.math.BigDecimal(sent).movePointLeft(c.decimals)
+                            .divide(java.math.BigDecimal(got).movePointLeft(toCur.decimals), 4, java.math.RoundingMode.HALF_UP)
+                        Text("Rate used: 1 ${toCur.code} = ${rate.stripTrailingZeros().toPlainString()} ${c.code}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(
+                        "Different currencies are never added together. Your ${state.currency.code} total changes by the amount that leaves or arrives in ${state.currency.code}.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             FormSection {
                 DateTimeField(vm.timestamp, { vm.timestamp = it }, minDate = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay), label = "Date and time")
                 TextInput(vm.notes, { vm.notes = it }, "Notes", singleLine = false, placeholder = "e.g. ATM withdrawal")
             }
             Text(
-                "A transfer only moves money between your own accounts. Your total balance, income and expenses don't change.",
+                if (cross) "Currency exchanges aren't income or expenses." else "A transfer only moves money between your own accounts. Your total balance, income and expenses don't change.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             ErrorBanner(vm.error)
@@ -246,7 +273,7 @@ fun AccountsScreen(state: LedgerState, repo: Repository, nav: NavController) {
                     Column(Modifier.padding(16.dp)) {
                         Text("Total available", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(Money.format(state.available, c), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        Text("The sum of all your accounts", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (state.foreignIds.isEmpty()) "The sum of all your accounts" else "The sum of your ${c.code} accounts. Other currencies are shown separately.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -274,10 +301,10 @@ private fun AccountRow(a: Account, state: LedgerState, onClick: () -> Unit) {
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(a.name, style = MaterialTheme.typography.titleMedium)
-                Text(a.kind.label + if (a.archived) " · archived" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(a.kind.label + (a.currency?.takeIf { a.id in state.foreignIds }?.let { " · $it" } ?: "") + if (a.archived) " · archived" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(
-                Money.format(bal, state.currency),
+                Money.format(bal, state.currencyOf(a.id)),
                 style = MaterialTheme.typography.titleMedium,
                 color = if (bal < 0) LocalMoneyColors.current.expense else MaterialTheme.colorScheme.onSurface,
             )
@@ -288,8 +315,11 @@ private fun AccountRow(a: Account, state: LedgerState, onClick: () -> Unit) {
 
 @Composable
 fun AccountEditDialog(state: LedgerState, repo: Repository, existing: Account?, onDone: () -> Unit) {
-    val c = state.currency
     val scope = rememberCoroutineScope()
+    var currencyCode by remember { mutableStateOf(existing?.currency ?: state.settings.currencyCode) }
+    var pickCurrency by remember { mutableStateOf(false) }
+    val c = com.lenzorium.expenses.domain.Currencies.find(currencyCode)
+    val locked = existing != null && state.txns.any { it.accountId == existing.id || it.toAccountId == existing.id }
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var kind by remember { mutableStateOf(existing?.kind ?: AccountKind.BANK) }
     var opening by remember { mutableStateOf(existing?.let { Money.toInput(it.openingMinor, c.decimals) } ?: "") }
@@ -307,6 +337,16 @@ fun AccountEditDialog(state: LedgerState, repo: Repository, existing: Account?, 
                     AccountKind.entries.forEach { k ->
                         FilterChip(selected = kind == k, onClick = { kind = k }, label = { Text(k.label) }, leadingIcon = { Icon(accountIcon(k), null, Modifier.size(18.dp)) })
                     }
+                }
+                Row(Modifier.fillMaxWidth().clickable(enabled = !locked) { pickCurrency = true }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Currency", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            if (locked) "Fixed: this account has entries" else if (currencyCode == state.settings.currencyCode) "Main currency" else "Kept separate from your ${state.settings.currencyCode} total",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text("${c.code} · ${c.name}", style = MaterialTheme.typography.titleSmall, color = if (locked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
                 }
                 AmountField(opening, { opening = it }, c, label = "Balance on ${Dates.epochDay(state.settings.trackingStartEpochDay)}")
                 Text(
@@ -330,8 +370,8 @@ fun AccountEditDialog(state: LedgerState, repo: Repository, existing: Account?, 
             TextButton(onClick = {
                 val v = if (opening.isBlank()) 0L else Money.parse(opening, c.decimals)
                 if (v == null) err = "Enter a valid opening balance." else scope.launch {
-                    val r = if (existing == null) repo.addAccount(name, kind, v)
-                    else repo.updateAccount(existing.copy(name = name, kind = kind, openingMinor = v, archived = archived))
+                    val r = if (existing == null) repo.addAccount(name, kind, v, currencyCode)
+                    else repo.updateAccount(existing.copy(name = name, kind = kind, openingMinor = v, archived = archived, currency = currencyCode))
                     when (r) {
                         is SaveResult.Ok -> onDone()
                         is SaveResult.Error -> err = r.message
@@ -341,6 +381,24 @@ fun AccountEditDialog(state: LedgerState, repo: Repository, existing: Account?, 
         },
         dismissButton = { TextButton(onClick = onDone) { Text("Cancel") } },
     )
+    if (pickCurrency) {
+        AlertDialog(
+            onDismissRequest = { pickCurrency = false },
+            title = { Text("Account currency") },
+            text = {
+                androidx.compose.foundation.lazy.LazyColumn(Modifier.height(360.dp)) {
+                    items(com.lenzorium.expenses.domain.Currencies.all, key = { it.code }) { cur ->
+                        Row(Modifier.fillMaxWidth().clickable { currencyCode = cur.code; pickCurrency = false }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(cur.code, style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(56.dp))
+                            Text(cur.name + if (cur.code == state.settings.currencyCode) " (main)" else "", modifier = Modifier.weight(1f))
+                            if (cur.code == currencyCode) Icon(Icons.Rounded.Check, "Selected", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { pickCurrency = false }) { Text("Close") } },
+        )
+    }
     if (confirmDelete && existing != null) {
         ConfirmDialog(
             "Delete \"${existing.name}\"?", "Only accounts with no entries can be deleted.", "Delete", destructive = true,
@@ -365,7 +423,7 @@ fun AccountDetailScreen(state: LedgerState, repo: Repository, accountId: Long, n
     val a = state.accountById[accountId]
     LaunchedEffect(a, state.loaded) { if (a == null && state.loaded && state.accounts.isNotEmpty()) nav.popBackStack() }
     if (a == null) return
-    val c = state.currency
+    val c = state.currencyOf(a.id)
     var editing by remember { mutableStateOf(false) }
     val entries = state.txns.filter { it.accountId == accountId || it.toAccountId == accountId }
     val today = LocalDate.now()
@@ -422,7 +480,7 @@ fun AccountDetailScreen(state: LedgerState, repo: Repository, accountId: Long, n
                     SectionCard {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             entries.forEach { t ->
-                                TxnRow(t, t.categoryId?.let { state.categoryById[it] }, c, onClick = { nav.navigate(Routes.txn(t.id)) }, showDate = true, account = state.accountLabel(t))
+                                TxnRow(t, t.categoryId?.let { state.categoryById[it] }, state.currencyFor(t), toCurrency = state.currencyOf(t.toAccountId), onClick = { nav.navigate(Routes.txn(t.id)) }, showDate = true, account = state.accountLabel(t))
                             }
                         }
                     }

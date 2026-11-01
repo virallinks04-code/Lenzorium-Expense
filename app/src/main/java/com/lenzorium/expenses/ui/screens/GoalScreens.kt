@@ -191,8 +191,8 @@ fun GoalDetailScreen(state: LedgerState, repo: Repository, id: Long, nav: NavCon
                         goal.accountId?.let { a -> state.accountName(a)?.let { Text("Kept in $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
                         Spacer(Modifier.height(16.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { moneyDialog = 1 }, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(6.dp)); Text("Add money") }
-                            OutlinedButton(onClick = { moneyDialog = -1 }, enabled = p.saved > 0, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.Remove, null); Spacer(Modifier.width(6.dp)); Text("Take back") }
+                            Button(onClick = { moneyDialog = 1 }, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Add", maxLines = 1) }
+                            OutlinedButton(onClick = { moneyDialog = -1 }, enabled = p.saved > 0, modifier = Modifier.weight(1f)) { Icon(Icons.Rounded.Remove, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Take back", maxLines = 1) }
                         }
                     }
                 }
@@ -297,7 +297,7 @@ private fun GoalEditDialog(state: LedgerState, repo: Repository, existing: Goal?
                     Text(date?.let(Dates::date) ?: "None", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
                 }
                 if (date != null) TextButton(onClick = { date = null }) { Text("Remove date") }
-                AccountSelector(state.activeAccounts, accountId, { accountId = if (accountId == it) null else it }, state.accountBalances, c, "Kept in (optional)")
+                AccountSelector(state.activeLedgerAccounts, accountId, { accountId = if (accountId == it) null else it }, state.accountBalances, c, "Kept in (optional)")
                 Text("Colour", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     goalColors.forEach { col ->

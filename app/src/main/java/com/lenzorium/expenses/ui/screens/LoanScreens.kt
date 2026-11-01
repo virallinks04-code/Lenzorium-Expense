@@ -463,7 +463,7 @@ fun LoanFormScreen(repo: Repository, state: LedgerState, editId: Long, existing:
         // Pre-fill the account from the linked "received" entry when editing; default to the first account otherwise.
         if (vm.loaded && vm.accountId == null) {
             if (vm.isEdit) state.txns.firstOrNull { it.loanId == editId && it.type == TxnType.LOAN_RECEIVED }?.accountId?.let { vm.accountId = it }
-            else vm.accountId = state.activeAccounts.firstOrNull()?.id
+            else vm.accountId = state.activeLedgerAccounts.firstOrNull()?.id
             vm.markClean()
         }
     }
@@ -506,7 +506,7 @@ fun LoanFormScreen(repo: Repository, state: LedgerState, editId: Long, existing:
                 if (!vm.isOpening) {
                     DateTimeField(vm.receivedAt, { vm.receivedAt = it }, minDate = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay), label = "Date received")
                     AccountSelector(
-                        state.activeAccounts + listOfNotNull(vm.accountId?.let { id -> state.accountById[id]?.takeIf { it.archived } }),
+                        state.activeLedgerAccounts + listOfNotNull(vm.accountId?.let { id -> state.accountById[id]?.takeIf { it.archived } }),
                         vm.accountId, { vm.accountId = it }, state.accountBalances, c, label = "Received into",
                     )
                 }
@@ -641,7 +641,7 @@ fun LoanEventScreen(repo: Repository, state: LedgerState, type: TxnType, loanId:
     }
     val back = rememberDiscardGuard(vm.dirty) { nav.popBackStack() }
     LaunchedEffect(vm.loaded, state.accounts) {
-        if (vm.loaded && !vm.isEdit && vm.accountId == null) vm.accountId = state.activeAccounts.firstOrNull()?.id
+        if (vm.loaded && !vm.isEdit && vm.accountId == null) vm.accountId = state.activeLedgerAccounts.firstOrNull()?.id
     }
 
     val selectable = state.loanSummaries.filter { it.outstanding > 0 || it.loan.id == vm.loanId }
@@ -699,7 +699,7 @@ fun LoanEventScreen(repo: Repository, state: LedgerState, type: TxnType, loanId:
             FormSection {
                 DateTimeField(vm.timestamp, { vm.timestamp = it }, minDate = LocalDate.ofEpochDay(state.settings.trackingStartEpochDay), label = if (isRepay) "Payment date" else "Date")
                 if (isRepay) AccountSelector(
-                    state.activeAccounts + listOfNotNull(vm.accountId?.let { id -> state.accountById[id]?.takeIf { it.archived } }),
+                    state.activeLedgerAccounts + listOfNotNull(vm.accountId?.let { id -> state.accountById[id]?.takeIf { it.archived } }),
                     vm.accountId, { vm.accountId = it }, state.accountBalances, c, label = "Paid from",
                 )
                 TextInput(vm.notes, { vm.notes = it }, if (isRepay) "Notes" else "Description", singleLine = false, placeholder = if (isRepay) null else "e.g. Late fee, monthly interest")

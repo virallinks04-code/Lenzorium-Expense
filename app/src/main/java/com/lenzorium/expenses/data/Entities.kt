@@ -129,6 +129,8 @@ data class Txn(
     @ColumnInfo(defaultValue = "") val tags: String = "",
     /** The bill or regular income this entry paid, if any. */
     val recurringId: Long? = null,
+    /** For a transfer between accounts in different currencies: the amount that arrived, in the destination's currency. */
+    val toAmountMinor: Long? = null,
 ) {
     val tagList: List<String> get() = Tags.parse(tags)
 }

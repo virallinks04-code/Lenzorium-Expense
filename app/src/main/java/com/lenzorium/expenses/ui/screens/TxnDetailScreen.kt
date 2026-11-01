@@ -78,7 +78,7 @@ fun TxnDetailScreen(state: LedgerState, repo: Repository, id: Long, nav: NavCont
                 Spacer(Modifier.width(14.dp))
                 Column {
                     Text(txnTitle(t, cat), style = MaterialTheme.typography.titleLarge)
-                    Text(txnAmountText(t, c), style = MaterialTheme.typography.headlineMedium, color = txnColor(t.type))
+                    Text(txnAmountText(t, state.currencyFor(t), state.currencyOf(t.toAccountId)), style = MaterialTheme.typography.headlineMedium, color = txnColor(t.type))
                 }
             }
             SectionCard {
@@ -104,7 +104,8 @@ fun TxnDetailScreen(state: LedgerState, repo: Repository, id: Long, nav: NavCont
                     when (t.type) {
                         TxnType.LOAN_CHARGE -> Field("Effect", "Adds to the loan's debt. Available balance is not changed.")
                         TxnType.TRANSFER -> Field("Effect", "Moves money between your accounts. Your total balance doesn't change.")
-                        else -> Field("Effect on available balance", Money.formatSigned(LedgerMath.cashDelta(t), c))
+                        else -> if (t.accountId in state.foreignIds) Field("Effect on available balance", "None: this account is in ${state.currencyFor(t).code}, kept separate from your ${c.code} total.")
+                            else Field("Effect on available balance", Money.formatSigned(LedgerMath.cashDelta(t, state.foreignIds), c))
                     }
                     if (t.notes.isNotBlank()) Field("Notes", t.notes)
                     if (t.tagList.isNotEmpty()) Field("Tags", t.tagList.joinToString("  ") { "#$it" })
@@ -160,8 +161,8 @@ fun TxnDetailScreen(state: LedgerState, repo: Repository, id: Long, nav: NavCont
     }
 
     if (confirmDelete) {
-        val after = state.available - LedgerMath.cashDelta(t)
-        val warn = if (after < 0 && LedgerMath.cashDelta(t) > 0) "\n\nYour available balance will become ${Money.format(after, c)}." else ""
+        val after = state.available - LedgerMath.cashDelta(t, state.foreignIds)
+        val warn = if (after < 0 && LedgerMath.cashDelta(t, state.foreignIds) > 0) "\n\nYour available balance will become ${Money.format(after, c)}." else ""
         ConfirmDialog(
             title = "Delete this ${t.type.label.lowercase()}?",
             message = "${txnTitle(t, cat)} · ${Money.format(t.amountMinor, c)}. This can't be undone.$warn",

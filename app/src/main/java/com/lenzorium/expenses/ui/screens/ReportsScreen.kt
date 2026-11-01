@@ -86,7 +86,7 @@ fun ReportsScreen(state: LedgerState, repo: Repository) {
     else Period.of(kind, LocalDate.ofEpochDay(startDay))
 
     val report = remember(period, state.txns, state.loans, state.categories, state.accounts) {
-        ReportBuilder.build(period, state.totalOpening, state.txns, state.loans, state.categories, accounts = state.accounts)
+        ReportBuilder.build(period, state.totalOpening, state.txns, state.loans, state.categories, accounts = state.accounts, ledgerCurrency = state.settings.currencyCode)
     }
     fun setPeriod(p: Period) { kindName = p.kind.name; startDay = p.start.toEpochDay(); endDay = p.endInclusive.toEpochDay() }
 
@@ -150,11 +150,12 @@ fun ReportsScreen(state: LedgerState, repo: Repository) {
                         KV("+ Money borrowed", Money.format(report.totals.borrowed, c))
                         KV("− Expenses", Money.format(report.totals.expenses, c))
                         KV("− Loan repayments", Money.format(report.totals.repayments, c))
+                        if (report.totals.exchangeNet != 0L) KV("± Currency exchange", Money.formatSigned(report.totals.exchangeNet, c))
                         HorizontalDivider(Modifier.padding(vertical = 6.dp))
                         KV("Closing (end of ${com.lenzorium.expenses.ui.components.Dates.short(period.endInclusive)})", Money.format(report.closingBalance, c), bold = true)
                         if (report.accountClosing.size > 1) {
                             Spacer(Modifier.height(4.dp))
-                            report.accountClosing.forEach { (name, v) -> KV("   $name", Money.format(v, c)) }
+                            report.accountClosing.forEach { a -> KV("   ${a.name}", Money.format(a.minor, a.currency ?: c)) }
                         }
                     }
                 }
@@ -188,7 +189,7 @@ fun ReportsScreen(state: LedgerState, repo: Repository) {
                         val len = java.time.temporal.ChronoUnit.DAYS.between(period.start, period.endInclusive) + 1
                         Period(PeriodKind.CUSTOM, period.start.minusDays(len), period.start.minusDays(1))
                     } else period.shift(-1)
-                    p to LedgerMath.periodTotals(state.txns, Dates.startOf(p.start), Dates.startOf(p.endInclusive.plusDays(1)))
+                    p to LedgerMath.periodTotals(state.txns, Dates.startOf(p.start), Dates.startOf(p.endInclusive.plusDays(1)), state.foreignIds)
                 }
                 val (pp, pt) = prev
                 SectionTitle("Compared with ${pp.label}")
@@ -214,7 +215,7 @@ fun ReportsScreen(state: LedgerState, repo: Repository) {
             if (kind == PeriodKind.MONTH && state.budgets.isNotEmpty()) {
                 item {
                     val ym = java.time.YearMonth.from(period.start)
-                    val rows = remember(state.budgets, state.txns, ym) { state.budgets.map { PlanMath.status(it, state.txns, ym) } }
+                    val rows = remember(state.budgets, state.txns, ym) { state.budgets.map { PlanMath.status(it, state.ledgerTxns, ym) } }
                     SectionTitle("Budget vs actual")
                     SectionCard {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -234,7 +235,7 @@ fun ReportsScreen(state: LedgerState, repo: Repository) {
                 }
             }
 
-            val merchants = PlanMath.topMerchants(state.txns, report.startMillis, report.endMillis)
+            val merchants = PlanMath.topMerchants(state.ledgerTxns, report.startMillis, report.endMillis)
             if (merchants.isNotEmpty()) {
                 item {
                     SectionTitle("Top places you spent")
@@ -248,7 +249,7 @@ fun ReportsScreen(state: LedgerState, repo: Repository) {
                     }
                 }
             }
-            val tagTotals = PlanMath.byTag(state.txns, report.startMillis, report.endMillis)
+            val tagTotals = PlanMath.byTag(state.ledgerTxns, report.startMillis, report.endMillis)
             if (tagTotals.isNotEmpty()) {
                 item {
                     SectionTitle("Spending by tag")

@@ -114,6 +114,8 @@ class ScreenshotTest {
     @Test fun transfer() = shot("16_transfer") { TransferScreen(repo, s, 0, 0, it) }
     @Test fun accounts() = shot("17_accounts") { AccountsScreen(s, repo, it) }
     @Test fun accountDetail() = shot("18_account_cash") { AccountDetailScreen(s, repo, 1, it) }
+    @Test fun txnDetailExchange() = shot("19_exchange_detail") { TxnDetailScreen(s, repo, 102, it) }
+    @Test fun accountForeign() = shot("18_account_gbp") { AccountDetailScreen(s, repo, 4, it) }
     @Test fun txnDetailTransfer() = shot("19_transfer_detail") { TxnDetailScreen(s, repo, 100, it) }
     @Test fun setup() = shot("15_setup_welcome") { SetupScreen(repo) {} }
 

@@ -40,6 +40,7 @@ object SampleData {
         Account(1, "Cash", AccountKind.CASH, 15_000_00, false, 1),
         Account(2, "Bank", AccountKind.BANK, 70_000_00, false, 2),
         Account(3, "JazzCash", AccountKind.WALLET, 0, false, 3),
+        Account(4, "UK Account", AccountKind.BANK, 250_00, false, 4, currency = "GBP"),
     )
 
     private fun t(type: TxnType, amount: Long, category: String?, ts: Long, party: String, method: PayMethod? = PayMethod.CARD, loanId: Long? = null, notes: String = "") =
@@ -69,6 +70,8 @@ object SampleData {
         t(TxnType.EXPENSE, 1_800, "Entertainment", at(3, 21, 0), "Cinepax").copy(tags = "family,weekend"),
         t(TxnType.LOAN_REPAYMENT, 10_000, null, at(5, 10, 0), "Ali Raza", PayMethod.BANK, loanId = 1),
         Txn(id = 100, type = TxnType.TRANSFER, amountMinor = 10_000_00, timestamp = at(4, 18, 30), notes = "ATM withdrawal", requestId = "s100", createdAt = 0, accountId = 2, toAccountId = 1),
+        Txn(id = 102, type = TxnType.TRANSFER, amountMinor = 37_000_00, toAmountMinor = 100_00, timestamp = at(7, 11, 0), notes = "Sent to UK", requestId = "s102", createdAt = 0, accountId = 2, toAccountId = 4),
+        Txn(id = 103, type = TxnType.EXPENSE, amountMinor = 12_50, categoryId = cat("Food"), timestamp = at(6, 13, 0), party = "Pret", requestId = "s103", createdAt = 0, accountId = 4),
         Txn(id = 101, type = TxnType.TRANSFER, amountMinor = 3_000_00, timestamp = at(9, 12, 0), notes = "Top-up", requestId = "s101", createdAt = 0, accountId = 2, toAccountId = 3),
         t(TxnType.EXPENSE, 2_350, "Health", at(6, 12, 20), "Dawaai"),
         t(TxnType.EXPENSE, 5_000, "Education", at(8, 20, 0), "Coursera"),

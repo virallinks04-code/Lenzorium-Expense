@@ -100,8 +100,8 @@ fun HomeScreen(state: LedgerState, nav: NavController, repo: com.lenzorium.expen
     val dayEnd = Dates.startOf(today.plusDays(1))
     val monthStart = Dates.startOf(today.withDayOfMonth(1))
     val monthEnd = Dates.startOf(today.withDayOfMonth(1).plusMonths(1))
-    val todayTotals = remember(state.txns) { LedgerMath.periodTotals(state.txns, dayStart, dayEnd) }
-    val month = remember(state.txns) { LedgerMath.periodTotals(state.txns, monthStart, monthEnd) }
+    val todayTotals = remember(state.txns) { LedgerMath.periodTotals(state.txns, dayStart, dayEnd, state.foreignIds) }
+    val month = remember(state.txns) { LedgerMath.periodTotals(state.txns, monthStart, monthEnd, state.foreignIds) }
     val slices = remember(month, state.categories) {
         month.expensesByCategory.entries.sortedByDescending { it.value }.map { (id, v) ->
             val cat = id?.let { state.categoryById[it] }
@@ -196,7 +196,7 @@ fun HomeScreen(state: LedgerState, nav: NavController, repo: com.lenzorium.expen
                                         Text(a.name, style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f), maxLines = 1)
                                     }
                                     Text(
-                                        if (hide) "••••" else Money.format(bal, c),
+                                        if (hide) "••••" else Money.format(bal, state.currencyOf(a.id)),
                                         style = MaterialTheme.typography.titleSmall,
                                         color = if (bal < 0 && !hide) Color(0xFFFFD180) else m.onHero,
                                         maxLines = 1,
@@ -205,6 +205,13 @@ fun HomeScreen(state: LedgerState, nav: NavController, repo: com.lenzorium.expen
                                 }
                             }
                         }
+                    }
+                    if (state.foreignIds.isNotEmpty()) {
+                        Text(
+                            "Accounts in other currencies aren't added to the ${c.code} total.",
+                            style = MaterialTheme.typography.labelSmall, color = m.onHero.copy(alpha = 0.75f),
+                            modifier = Modifier.padding(top = 6.dp, end = 12.dp),
+                        )
                     }
                     Spacer(Modifier.height(10.dp))
                     Row(
@@ -481,7 +488,7 @@ fun HomeScreen(state: LedgerState, nav: NavController, repo: com.lenzorium.expen
                 SectionCard {
                     Column(Modifier.padding(vertical = 4.dp)) {
                         recent.forEach { t ->
-                            TxnRow(t, t.categoryId?.let { state.categoryById[it] }, c, onClick = { nav.navigate(Routes.txn(t.id)) }, showDate = true, account = state.accountLabel(t))
+                            TxnRow(t, t.categoryId?.let { state.categoryById[it] }, state.currencyFor(t), toCurrency = state.currencyOf(t.toAccountId), onClick = { nav.navigate(Routes.txn(t.id)) }, showDate = true, account = state.accountLabel(t))
                         }
                     }
                 }

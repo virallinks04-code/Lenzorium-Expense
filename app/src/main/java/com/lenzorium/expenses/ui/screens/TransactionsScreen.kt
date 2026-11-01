@@ -148,8 +148,8 @@ fun TransactionsScreen(state: LedgerState, nav: NavController) {
             }
 
             if (results.isNotEmpty()) {
-                val inSum = results.sumOf { maxOf(0L, LedgerMath.cashDelta(it)) }
-                val outSum = results.sumOf { maxOf(0L, -LedgerMath.cashDelta(it)) }
+                val inSum = results.sumOf { maxOf(0L, LedgerMath.cashDelta(it, state.foreignIds)) }
+                val outSum = results.sumOf { maxOf(0L, -LedgerMath.cashDelta(it, state.foreignIds)) }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
                     Text("${results.size} entries", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                     Text("In ${Money.format(inSum, c)}", style = MaterialTheme.typography.bodySmall, color = m.income)
@@ -174,12 +174,12 @@ fun TransactionsScreen(state: LedgerState, nav: NavController) {
                             item(key = "h$day") {
                                 Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 2.dp)) {
                                     Text(Dates.dayHeader(day), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
-                                    val net = list.sumOf { LedgerMath.cashDelta(it) }
+                                    val net = list.sumOf { LedgerMath.cashDelta(it, state.foreignIds) }
                                     Text(Money.formatSigned(net, c), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                             items(list, key = { it.id }) { t ->
-                                TxnRow(t, t.categoryId?.let { state.categoryById[it] }, c, onClick = { nav.navigate(Routes.txn(t.id)) }, account = state.accountLabel(t))
+                                TxnRow(t, t.categoryId?.let { state.categoryById[it] }, state.currencyFor(t), toCurrency = state.currencyOf(t.toAccountId), onClick = { nav.navigate(Routes.txn(t.id)) }, account = state.accountLabel(t))
                             }
                         }
                     }

@@ -197,6 +197,7 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `transactions` ADD COLUMN `tags` TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE `transactions` ADD COLUMN `recurringId` INTEGER")
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `toAmountMinor` INTEGER")
                 db.execSQL("ALTER TABLE `accounts` ADD COLUMN `currency` TEXT")
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `budgets` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `categoryId` INTEGER, " +

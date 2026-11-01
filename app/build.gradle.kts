@@ -103,6 +103,8 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     implementation("androidx.work:work-runtime-ktx:2.10.0")
+    // On-device receipt text recognition (bundled model: works offline, nothing is uploaded).
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")

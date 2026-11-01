@@ -79,13 +79,34 @@ data class ReportData(
     val lenders: List<LenderDebt>,
     val txns: List<Txn>,
     /** Each account's balance at the end of the period. */
-    val accountClosing: List<Pair<String, Long>> = emptyList(),
+    val accountClosing: List<AccountClosing> = emptyList(),
+    /** Accounts in another currency (kept out of the totals). */
+    val foreign: Set<Long> = emptySet(),
+    val accountCurrency: Map<Long, CurrencyInfo> = emptyMap(),
     val accountNames: Map<Long, String> = emptyMap(),
 ) {
     /** "Cash", or "Bank → Cash" for a transfer. */
     fun accountLabel(t: Txn): String =
         if (t.type == TxnType.TRANSFER) "${accountNames[t.accountId] ?: "?"} → ${accountNames[t.toAccountId] ?: "?"}"
         else t.accountId?.let { accountNames[it] } ?: t.paymentMethod?.label ?: ""
+}
+
+/** Closing balance of one account; [currency] is set only when it differs from the main currency. */
+data class AccountClosing(val name: String, val minor: Long, val currency: CurrencyInfo? = null)
+
+/** Display amount for a report line: signed in the main currency, or in the account's own currency. */
+fun ReportData.amountText(t: Txn, c: CurrencyInfo): String {
+    val own = t.accountId?.let { accountCurrency[it] }
+    return when {
+        t.type == TxnType.LOAN_CHARGE -> "debt +" + Money.number(t.amountMinor, c.decimals)
+        t.type == TxnType.TRANSFER -> {
+            val to = t.toAccountId?.let { accountCurrency[it] } ?: c
+            val from = own ?: c
+            if (from.code != to.code) Money.format(t.amountMinor, from) + " → " + Money.format(LedgerMath.received(t), to) else Money.format(t.amountMinor, from)
+        }
+        own != null -> Money.formatSigned(if (t.type == TxnType.INCOME || t.type == TxnType.LOAN_RECEIVED) t.amountMinor else -t.amountMinor, own)
+        else -> Money.formatSigned(LedgerMath.cashDelta(t, foreign), c)
+    }
 }
 
 object ReportBuilder {
@@ -98,17 +119,19 @@ object ReportBuilder {
         zone: ZoneId = ZoneId.systemDefault(),
         today: LocalDate = LocalDate.now(zone),
         accounts: List<com.lenzorium.expenses.data.Account> = emptyList(),
+        ledgerCurrency: String? = null,
     ): ReportData {
+        val foreign = accounts.filter { it.currency != null && ledgerCurrency != null && it.currency != ledgerCurrency }.map { it.id }.toSet()
         val start = period.start.atStartOfDay(zone).toInstant().toEpochMilli()
         val end = period.endInclusive.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val totals = LedgerMath.periodTotals(txns, start, end)
+        val totals = LedgerMath.periodTotals(txns, start, end, foreign)
         val cats = categories.associateBy { it.id }
         fun toList(m: Map<Long?, Long>) = m.entries
             .map { (id, v) -> val c = id?.let { cats[it] }; CategoryAmount(c?.name ?: "Uncategorised", c?.colorArgb ?: 0xFF9E9E9EL, v) }
             .sortedByDescending { it.amount }
 
         val inPeriod = txns.filter { it.timestamp in start until end }.sortedBy { it.timestamp }
-        val expenses = inPeriod.filter { it.type == TxnType.EXPENSE }
+        val expenses = inPeriod.filter { it.type == TxnType.EXPENSE && it.accountId !in foreign }
 
         // Spending trend buckets
         val days = ChronoUnit.DAYS.between(period.start, period.endInclusive) + 1
@@ -154,8 +177,8 @@ object ReportBuilder {
             startMillis = start,
             endMillis = end,
             totals = totals,
-            openingBalance = LedgerMath.availableBalance(openingBalance, txns, start),
-            closingBalance = LedgerMath.availableBalance(openingBalance, txns, end),
+            openingBalance = LedgerMath.availableBalance(openingBalance, txns, start, foreign),
+            closingBalance = LedgerMath.availableBalance(openingBalance, txns, end, foreign),
             debtAtEnd = LedgerMath.outstandingDebt(loans, txns, end),
             debtNow = LedgerMath.outstandingDebt(loans, txns),
             expenseByCategory = toList(totals.expensesByCategory),
@@ -166,10 +189,12 @@ object ReportBuilder {
             lenders = lenders,
             txns = inPeriod,
             accountClosing = accounts
-                .map { it.name to LedgerMath.accountBalance(it, txns, end) to it.archived }
-                .filter { (pair, archived) -> !archived || pair.second != 0L }
+                .map { AccountClosing(it.name, LedgerMath.accountBalance(it, txns, end), if (it.id in foreign) Currencies.find(it.currency!!) else null) to it.archived }
+                .filter { (a, archived) -> !archived || a.minor != 0L }
                 .map { it.first },
             accountNames = accounts.associate { it.id to it.name },
+            foreign = foreign,
+            accountCurrency = accounts.filter { it.id in foreign }.associate { it.id to Currencies.find(it.currency!!) },
         )
     }
 }
