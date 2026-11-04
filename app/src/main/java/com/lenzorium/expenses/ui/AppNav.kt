@@ -129,6 +129,7 @@ object Routes {
     const val LOANS = "loans"
     const val CATEGORIES = "categories"
     const val ACCOUNTS = "accounts"
+    const val PROFILE = "profile"
     fun account(id: Long) = "account/$id"
     fun transfer(id: Long = 0, from: Long = 0) = "transfer?id=$id&from=$from"
     fun entry(type: TxnType, id: Long = 0) = "entry/${type.name}?id=$id"
@@ -173,10 +174,12 @@ private fun SetupWithRestore(repo: Repository) {
     var pending by remember { mutableStateOf<Uri?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var passwordFor by remember { mutableStateOf<Uri?>(null) }
+    var driveRestore by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> pending = uri }
     androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.background) {
-        SetupScreen(repo, onRestore = { picker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) })
+        SetupScreen(repo, onRestore = { picker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }, onRestoreDrive = { driveRestore = true })
     }
+    if (driveRestore) com.lenzorium.expenses.ui.screens.DriveRestoreDialog(null, repo) { driveRestore = false }
     pending?.let { uri ->
         ConfirmDialog(
             title = "Restore this backup?",
@@ -361,6 +364,7 @@ internal fun MainShell(
             composable("txn/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
                 TxnDetailScreen(state, repo, e.arguments?.getLong("id") ?: 0L, nav)
             }
+            composable(Routes.PROFILE) { com.lenzorium.expenses.ui.screens.ProfileScreen(state, repo, nav) }
             composable(PlanRoutes.BUDGETS) { BudgetsScreen(state, repo, nav) }
             composable(PlanRoutes.BILLS) { BillsScreen(state, repo, nav) }
             composable(PlanRoutes.GOALS) { GoalsScreen(state, repo, nav) }

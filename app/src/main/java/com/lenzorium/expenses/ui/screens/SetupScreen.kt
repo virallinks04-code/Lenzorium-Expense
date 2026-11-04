@@ -66,7 +66,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 @Composable
-fun SetupScreen(repo: Repository, onRestore: () -> Unit) {
+fun SetupScreen(repo: Repository, onRestore: () -> Unit, onRestoreDrive: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var step by rememberSaveable { mutableStateOf(0) }
@@ -127,7 +127,7 @@ fun SetupScreen(repo: Repository, onRestore: () -> Unit) {
         }
         Column(Modifier.weight(1f).padding(24.dp)) {
             when (step) {
-                0 -> Welcome(onRestore)
+                0 -> Welcome(onRestore, onRestoreDrive)
                 1 -> CurrencyStep(currencyCode) { currencyCode = it }
                 2 -> Column(Modifier.verticalScroll(rememberScrollState())) {
                     StepHeader("Where is your money?", "Enter what you have right now. You can enter 0, and add more accounts (another bank, JazzCash, Easypaisa) later in Settings.")
@@ -187,7 +187,7 @@ private fun StepHeader(title: String, subtitle: String) {
 }
 
 @Composable
-private fun Welcome(onRestore: () -> Unit) {
+private fun Welcome(onRestore: () -> Unit, onRestoreDrive: () -> Unit) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         com.lenzorium.expenses.ui.components.BrandMark(96)
         Spacer(Modifier.height(20.dp))
@@ -202,7 +202,8 @@ private fun Welcome(onRestore: () -> Unit) {
         Spacer(Modifier.height(8.dp))
         Text("Everything stays on this phone. No account needed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(24.dp))
-        TextButton(onClick = onRestore) { Text("I have a backup — restore it") }
+        TextButton(onClick = onRestoreDrive) { Text("Restore from Google Drive") }
+        TextButton(onClick = onRestore) { Text("Restore from a backup file") }
     }
 }
 

@@ -106,6 +106,8 @@ dependencies {
 
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
+    // Optional Google sign-in for backups in the user's own Google Drive (no Firebase, no developer server).
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
     // On-device receipt text recognition (bundled model: works offline, nothing is uploaded).
     implementation("com.google.mlkit:text-recognition:16.0.1")
 

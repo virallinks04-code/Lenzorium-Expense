@@ -6,9 +6,9 @@
     <!-- Bill reminders and budget warnings. Asked only when the user turns them on. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- The app works fully offline. ML Kit's optional usage logging would add internet access;
-         it is removed so no data can leave the phone. -->
-    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <!-- Internet is used only when the user signs in with Google, to back up to and restore from
+         their own Google Drive. Nothing is sent anywhere else. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
@@ -43,5 +43,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- ML Kit's built-in usage logging is switched off: removing its delivery service means
+             receipt-reading statistics are never sent. Receipts are always read on the phone. -->
+        <service
+            android:name="com.google.android.datatransport.runtime.backends.TransportBackendDiscovery"
+            tools:node="remove" />
     </application>
 </manifest>

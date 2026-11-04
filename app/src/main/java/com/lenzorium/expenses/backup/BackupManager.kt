@@ -187,6 +187,8 @@ class BackupManager(private val context: Context, private val repo: Repository) 
                     setupDone = true, lastBackupAt = System.currentTimeMillis(),
                     // Automatic-backup settings belong to this phone, not to the file.
                     autoBackupUri = keep.autoBackupUri, autoBackupDays = keep.autoBackupDays, autoBackupLast = keep.autoBackupLast,
+                    googleEmail = keep.googleEmail, googlePhoto = keep.googlePhoto, driveBackup = keep.driveBackup, driveLast = keep.driveLast,
+                    profileName = keep.profileName.ifBlank { data.settings.profileName },
                 )
             }
             Result.success(data.txns.size)

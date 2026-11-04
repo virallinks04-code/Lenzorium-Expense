@@ -143,6 +143,17 @@ class DailyCheckWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker
         val txns = repo.txns.first()
         val statuses = repo.budgets.first().map { PlanMath.status(it, txns, YearMonth.now()) }
         Notifier.budgetCrossings(applicationContext, statuses, repo.categories.first().associateBy { it.id })
+        if (com.lenzorium.expenses.cloud.DriveBackup.isDue(repo)) {
+            runCatching {
+                val token = com.lenzorium.expenses.cloud.GoogleDrive.token(applicationContext)
+                com.lenzorium.expenses.cloud.DriveBackup.backupNow(applicationContext, repo, token)
+            }.onFailure { e ->
+                // Offline is normal: try again tomorrow without bothering the user unless it's been over a week.
+                val stale = System.currentTimeMillis() - repo.settings.current.driveLast > 8L * 24 * 60 * 60 * 1000
+                if (e is com.lenzorium.expenses.cloud.NeedsUserApproval) Notifier.backupProblem(applicationContext, "Open the app and sign in to Google again to keep backing up to Google Drive.")
+                else if (stale) Notifier.backupProblem(applicationContext, e.message ?: "Google Drive backup failed.")
+            }
+        }
         if (com.lenzorium.expenses.backup.AutoBackup.isDue(repo)) {
             com.lenzorium.expenses.backup.AutoBackup.run(applicationContext, repo).onFailure { e ->
                 Notifier.backupProblem(applicationContext, e.message ?: "Automatic backup failed.")

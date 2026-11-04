@@ -42,6 +42,14 @@ data class AppSettings(
     /** Days between automatic backups (1 = daily, 7 = weekly). */
     val autoBackupDays: Int = 7,
     val autoBackupLast: Long = 0L,
+    /** Name shown on Home and in Profile (from Google or typed by the user). */
+    val profileName: String = "",
+    /** Signed-in Google account, or null when using the app without signing in. */
+    val googleEmail: String? = null,
+    val googlePhoto: String? = null,
+    /** Back up to Google Drive automatically (uses [autoBackupDays]). */
+    val driveBackup: Boolean = true,
+    val driveLast: Long = 0L,
 ) {
     val currency: CurrencyInfo get() = Currencies.find(currencyCode)
     val lockEnabled: Boolean get() = pinHash != null
@@ -73,6 +81,11 @@ class SettingsStore(context: Context) {
         autoBackupUri = prefs.getString(K_AUTO_URI, null),
         autoBackupDays = prefs.getInt(K_AUTO_DAYS, 7),
         autoBackupLast = prefs.getLong(K_AUTO_LAST, 0L),
+        profileName = prefs.getString(K_PROFILE_NAME, "") ?: "",
+        googleEmail = prefs.getString(K_G_EMAIL, null),
+        googlePhoto = prefs.getString(K_G_PHOTO, null),
+        driveBackup = prefs.getBoolean(K_DRIVE, true),
+        driveLast = prefs.getLong(K_DRIVE_LAST, 0L),
     )
 
     @Synchronized
@@ -99,6 +112,11 @@ class SettingsStore(context: Context) {
             .putString(K_AUTO_URI, s.autoBackupUri)
             .putInt(K_AUTO_DAYS, s.autoBackupDays)
             .putLong(K_AUTO_LAST, s.autoBackupLast)
+            .putString(K_PROFILE_NAME, s.profileName)
+            .putString(K_G_EMAIL, s.googleEmail)
+            .putString(K_G_PHOTO, s.googlePhoto)
+            .putBoolean(K_DRIVE, s.driveBackup)
+            .putLong(K_DRIVE_LAST, s.driveLast)
             .commit()
         _state.value = s
     }
@@ -144,6 +162,11 @@ class SettingsStore(context: Context) {
         private const val K_AUTO_URI = "auto_backup_uri"
         private const val K_AUTO_DAYS = "auto_backup_days"
         private const val K_AUTO_LAST = "auto_backup_last"
+        private const val K_PROFILE_NAME = "profile_name"
+        private const val K_G_EMAIL = "google_email"
+        private const val K_G_PHOTO = "google_photo"
+        private const val K_DRIVE = "drive_backup"
+        private const val K_DRIVE_LAST = "drive_last"
 
         /** Small notification bookkeeping kept out of [AppSettings]. */
         const val K_ALERTED = "budget_alerted"

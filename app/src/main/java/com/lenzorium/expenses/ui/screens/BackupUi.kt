@@ -298,7 +298,7 @@ private fun Row2(icon: androidx.compose.ui.graphics.vector.ImageVector, title: S
 }
 
 @Composable
-private fun PasswordField(value: String, onChange: (String) -> Unit, label: String) {
+internal fun PasswordField(value: String, onChange: (String) -> Unit, label: String) {
     var show by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value, onValueChange = onChange, label = { Text(label) }, singleLine = true,
@@ -311,7 +311,7 @@ private fun PasswordField(value: String, onChange: (String) -> Unit, label: Stri
 
 /** Asks for a new password twice. With [allowNone], "No password" returns null. */
 @Composable
-private fun PasswordChoiceDialog(title: String, explain: String, allowNone: Boolean, onDone: (String?) -> Unit, onDismiss: () -> Unit) {
+internal fun PasswordChoiceDialog(title: String, explain: String, allowNone: Boolean, onDone: (String?) -> Unit, onDismiss: () -> Unit) {
     var a by remember { mutableStateOf("") }
     var b by remember { mutableStateOf("") }
     var err by remember { mutableStateOf<String?>(null) }

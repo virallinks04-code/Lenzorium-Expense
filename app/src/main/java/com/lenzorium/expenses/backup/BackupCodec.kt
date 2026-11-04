@@ -61,6 +61,7 @@ object BackupCodec {
             put("hideAmounts", s.hideAmounts)
             put("remindersEnabled", s.remindersEnabled)
             put("budgetAlerts", s.budgetAlerts)
+            put("profileName", s.profileName)
         })
         root.put("categories", JSONArray().apply {
             d.categories.forEach { c ->
@@ -179,6 +180,7 @@ object BackupCodec {
                 hideAmounts = s.optBoolean("hideAmounts", false),
                 remindersEnabled = s.optBoolean("remindersEnabled", true),
                 budgetAlerts = s.optBoolean("budgetAlerts", true),
+                profileName = s.optString("profileName", ""),
             )
             val cats = root.getJSONArray("categories").let { a ->
                 (0 until a.length()).map { i ->

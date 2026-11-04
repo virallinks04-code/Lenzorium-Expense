@@ -117,7 +117,7 @@ fun HomeScreen(state: LedgerState, nav: NavController, repo: com.lenzorium.expen
         item {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text(greeting(), style = MaterialTheme.typography.headlineSmall)
+                    Text(greeting() + (state.settings.profileName.trim().split(' ').firstOrNull()?.takeIf { it.isNotBlank() }?.let { ", $it" } ?: ""), style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     Text(today.format(DateTimeFormatter.ofPattern("EEEE, d MMMM")), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 val dueCount = state.dueNow.size
@@ -126,8 +126,10 @@ fun HomeScreen(state: LedgerState, nav: NavController, repo: com.lenzorium.expen
                         Icon(Icons.Rounded.Notifications, if (dueCount > 0) "$dueCount bills due" else "Bills")
                     }
                 }
-                FilledTonalButton(onClick = { nav.navigate(Routes.LOANS) }, contentPadding = PaddingValues(horizontal = 14.dp)) {
-                    Icon(Icons.Rounded.AccountBalance, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Loans")
+                IconButton(onClick = { nav.navigate(Routes.PROFILE) }) {
+                    BadgedBox(badge = { if (state.settings.googleEmail == null && state.txns.size >= 5) Badge() }) {
+                        Avatar(state.settings.profileName, state.settings.googlePhoto, 34.dp)
+                    }
                 }
             }
         }

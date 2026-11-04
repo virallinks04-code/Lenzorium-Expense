@@ -94,6 +94,23 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
 
     ScreenScaffold("More", nav = null) { padding ->
         LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
+                SectionCard(Modifier.clickable { nav.navigate(Routes.PROFILE) }) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Avatar(s.profileName, s.googlePhoto, 52.dp)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(s.profileName.ifBlank { "Your profile" }, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                s.googleEmail?.let { "$it · " + if (s.driveLast > 0) "backed up ${Dates.date(s.driveLast)}" else "Google Drive backup on" } ?: "Sign in with Google to back up to Drive",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (s.googleEmail == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
             item { SectionTitle("Plan") }
             item {
                 SectionCard {
