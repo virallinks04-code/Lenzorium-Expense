@@ -1,0 +1,3 @@
+key secret length: 3540, cleaned length: 3540
+password secret length: 24, cleaned length: 24
+RESULT: key and password OK

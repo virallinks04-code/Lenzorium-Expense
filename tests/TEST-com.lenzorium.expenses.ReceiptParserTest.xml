@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.lenzorium.expenses.ReceiptParserTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-11-04T07:55:14.243Z" hostname="runnervmwuk1x" time="0.02">
+  <properties/>
+  <testcase name="supermarketReceipt" classname="com.lenzorium.expenses.ReceiptParserTest" time="0.013"/>
+  <testcase name="ukReceiptAndSubtotalIgnored" classname="com.lenzorium.expenses.ReceiptParserTest" time="0.001"/>
+  <testcase name="noTotalFallsBackToLargestAmount" classname="com.lenzorium.expenses.ReceiptParserTest" time="0.002"/>
+  <testcase name="totalOnNextLineAndNamedMonth" classname="com.lenzorium.expenses.ReceiptParserTest" time="0.001"/>
+  <testcase name="futureOrImpossibleDatesIgnored" classname="com.lenzorium.expenses.ReceiptParserTest" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

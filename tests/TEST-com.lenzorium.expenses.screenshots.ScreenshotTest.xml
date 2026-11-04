@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.lenzorium.expenses.screenshots.ScreenshotTest" tests="39" skipped="0" failures="0" errors="0" timestamp="2026-11-04T07:55:20.897Z" hostname="runnervmwuk1x" time="17.072">
+  <properties/>
+  <testcase name="accounts" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="5.029"/>
+  <testcase name="homeFullDark" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="1.155"/>
+  <testcase name="shortcuts" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.26"/>
+  <testcase name="accountDetail" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.297"/>
+  <testcase name="goalDetail" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.249"/>
+  <testcase name="addExpenseDark" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.475"/>
+  <testcase name="addExpenseFull" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.447"/>
+  <testcase name="budgetsEmpty" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.227"/>
+  <testcase name="repayLoan" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.278"/>
+  <testcase name="takeLoan" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.297"/>
+  <testcase name="homeDark" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.47"/>
+  <testcase name="homeFull" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.719"/>
+  <testcase name="loanDetail" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.224"/>
+  <testcase name="profile" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.28"/>
+  <testcase name="addIncome" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.239"/>
+  <testcase name="reportsFull" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.764"/>
+  <testcase name="txnDetailTransfer" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.185"/>
+  <testcase name="home" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.466"/>
+  <testcase name="lock" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.238"/>
+  <testcase name="accountForeign" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.192"/>
+  <testcase name="bills" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.326"/>
+  <testcase name="goals" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.186"/>
+  <testcase name="loans" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.192"/>
+  <testcase name="setup" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.193"/>
+  <testcase name="budgetsDark" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.199"/>
+  <testcase name="budgets" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.281"/>
+  <testcase name="txnDetail" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.159"/>
+  <testcase name="profileSignedIn" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.284"/>
+  <testcase name="txnDetailExchange" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.187"/>
+  <testcase name="transactionsDark" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.244"/>
+  <testcase name="addExpense" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.236"/>
+  <testcase name="billForm" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.393"/>
+  <testcase name="reports" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.199"/>
+  <testcase name="transfer" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.191"/>
+  <testcase name="categories" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.174"/>
+  <testcase name="settings" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.386"/>
+  <testcase name="loansDark" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.166"/>
+  <testcase name="transactions" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.216"/>
+  <testcase name="homeEmpty" classname="com.lenzorium.expenses.screenshots.ScreenshotTest" time="0.363"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
