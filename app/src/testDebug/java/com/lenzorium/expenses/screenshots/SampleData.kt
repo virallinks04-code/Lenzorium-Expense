@@ -88,6 +88,7 @@ object SampleData {
         openingBalanceMinor = 85_000_00,
         trackingStartEpochDay = today.minusDays(60).toEpochDay(),
         lastBackupAt = System.currentTimeMillis() - 2L * 24 * 60 * 60 * 1000,
+        profileName = "Ahmed Khan",
     )
 
     private val month1 = monthStart.toEpochDay()
