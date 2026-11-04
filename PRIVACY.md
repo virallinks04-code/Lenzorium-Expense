@@ -1,12 +1,22 @@
 # Privacy Policy — Lenzorium Expenses
 
-_Last updated: 1 November 2026_
+_Last updated: 4 November 2026_
 
 Lenzorium Expenses is a personal expense, income and loan tracker for Android. This policy explains what the app does with your information.
 
 ## Summary
 
-Lenzorium Expenses keeps your financial records **on your phone**. The app has no account, no servers, no advertising and no analytics. It does not request internet access, and it never sends your data to the developer or to anyone else.
+Lenzorium Expenses keeps your financial records **on your phone**. The developer has no servers, no advertising and no analytics, and never receives your data. Signing in is optional: if you sign in with Google, your backups are stored in a private folder of **your own** Google Drive that only this app can open. The app's internet access is used only for that.
+
+## Sign in with Google (optional)
+
+When you choose **Sign in with Google**, Google asks you to allow:
+- **Your name, email address and profile photo**: shown on your Profile and used to label your backups.
+- **The app's own hidden folder in your Google Drive** (`drive.appdata`): the app can only see files it created there. It cannot see, read or change any of your other Drive files.
+
+Backups are full copies of your records (optionally protected with a password using AES-256 encryption). They are sent directly from your phone to Google over an encrypted connection and are subject to Google's privacy policy. The developer cannot access them.
+
+You can stop at any time: **Profile › Sign out** stops backups and removes the app's access to your Google account; **Profile › Delete my Google Drive backups** permanently deletes every backup the app stored. You can also remove the app's access at myaccount.google.com › Security › Third-party access.
 
 ## Information the app stores
 
@@ -35,15 +45,15 @@ Backup files and PDF/CSV reports are created only when you tap the corresponding
 
 ## Receipt reading
 
-"Read amount from receipt" uses Google ML Kit text recognition with the model built into the app. The photo is processed on your phone and is never uploaded. The app does not have internet access, so ML Kit's optional usage logging cannot send anything.
+"Read amount from receipt" uses Google ML Kit text recognition with the model built into the app. The photo is processed on your phone and is never uploaded. The app does not have internet access, so ML Kit's usage logging is switched off in the app.
 
 ## Data sharing
 
-The developer does not collect, sell or share any personal or financial data.
+The developer does not collect, sell or share any personal or financial data. The only data that leaves your phone is what you choose to back up to your own Google Drive or to a folder you pick.
 
 ## Deleting your data
 
-Delete individual entries in the app, or uninstall the app to remove all of its data from your phone. Backup files you saved yourself must be deleted separately, and Google backups can be managed in your Google account.
+Delete individual entries in the app, or uninstall the app to remove all of its data from your phone. Use Profile › Delete my Google Drive backups to remove backups from your Google Drive. Backup files you saved yourself must be deleted separately, and Google backups can be managed in your Google account.
 
 ## Children
 

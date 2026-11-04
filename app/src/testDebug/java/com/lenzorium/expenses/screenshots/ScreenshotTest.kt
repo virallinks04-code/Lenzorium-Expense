@@ -118,7 +118,7 @@ class ScreenshotTest {
     @Test fun txnDetailExchange() = shot("19_exchange_detail") { TxnDetailScreen(s, repo, 102, it) }
     @Test fun accountForeign() = shot("18_account_gbp") { AccountDetailScreen(s, repo, 4, it) }
     @Test fun txnDetailTransfer() = shot("19_transfer_detail") { TxnDetailScreen(s, repo, 100, it) }
-    @Test fun setup() = shot("15_setup_welcome") { SetupScreen(repo) {} }
+    @Test fun setup() = shot("15_setup_welcome") { SetupScreen(repo, onRestore = {}) }
 
     // Planning (Release 1)
     @Config(qualifiers = "w360dp-h1100dp-xxhdpi") @Test fun budgets() = tab("20_budgets", PlanRoutes.BUDGETS)
