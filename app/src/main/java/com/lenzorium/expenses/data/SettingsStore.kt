@@ -88,6 +88,13 @@ class SettingsStore(context: Context) {
         driveLast = prefs.getLong(K_DRIVE_LAST, 0L),
     )
 
+    /** Erases every setting (including the PIN) so the app starts at the welcome screen again. */
+    @Synchronized
+    fun resetAll() {
+        prefs.edit().clear().commit()
+        _state.value = read()
+    }
+
     @Synchronized
     fun update(transform: (AppSettings) -> AppSettings) {
         val s = transform(_state.value)

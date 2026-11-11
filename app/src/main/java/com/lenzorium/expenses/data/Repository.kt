@@ -410,6 +410,35 @@ class Repository(
         dao.allTxns().none { it.timestamp < ms }
     }
 
+    // ---------- Starting over ----------
+
+    /**
+     * Deletes every entry, loan, receipt photo and goal saving, keeping accounts (with their opening
+     * balances), categories, budgets, bills, shortcuts, goals and all settings. Bills restart from today.
+     */
+    suspend fun clearEntries() = withContext(Dispatchers.IO) {
+        db.withTransaction {
+            dao.clearTxns(); dao.clearLoans(); dao.clearGoalEntries()
+            val today = LocalDate.now().toEpochDay()
+            dao.allRecurring().filter { it.active && it.nextDueEpochDay < today }.forEach { r ->
+                dao.updateRecurring(r.copy(nextDueEpochDay = PlanMath.nextAfter(r, today - 1) ?: r.nextDueEpochDay))
+            }
+        }
+        File(context.filesDir, "receipts").deleteRecursively()
+    }
+
+    /** Deletes all data and settings on this phone. The app returns to the welcome screen. */
+    suspend fun resetAll() = withContext(Dispatchers.IO) {
+        db.withTransaction {
+            dao.clearTxns(); dao.clearLoans(); dao.clearGoalEntries(); dao.clearGoals()
+            dao.clearBudgets(); dao.clearRecurring(); dao.clearTemplates()
+            dao.clearCategories(); dao.clearAccounts()
+        }
+        File(context.filesDir, "receipts").deleteRecursively()
+        context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
+        settings.resetAll()
+    }
+
     // ---------- Budgets ----------
 
     suspend fun saveBudget(b: Budget): SaveResult = withContext(Dispatchers.IO) {

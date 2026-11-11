@@ -22,6 +22,8 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.DonutLarge
 import androidx.compose.material.icons.rounded.EventRepeat
 import androidx.compose.material.icons.rounded.Flag
@@ -91,6 +93,8 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
     var dialog by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<Pair<String, String>?>(null) }
     val askNotify = com.lenzorium.expenses.ui.components.rememberNotificationAsk()
+    var reset by remember { mutableStateOf<ResetKind?>(null) }
+    reset?.let { k -> ResetDialog(state, repo, k) { reset = null } }
 
     ScreenScaffold("More", nav = null) { padding ->
         LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -221,7 +225,17 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
                     Column {
                         SettingRow(Icons.Rounded.Shield, "How your data is kept safe", "Stored on this phone · Google backup · backup files") { dialog = "data" }
                         HorizontalDivider()
-                        SettingRow(Icons.Rounded.Policy, "Privacy policy", "No account, no ads, no tracking") { dialog = "privacy" }
+                        SettingRow(Icons.Rounded.Policy, "Privacy policy", "No ads, no tracking, no developer servers") { dialog = "privacy" }
+                    }
+                }
+            }
+            item { SectionTitle("Start over") }
+            item {
+                SectionCard {
+                    Column {
+                        SettingRow(Icons.Rounded.DeleteSweep, "Clear all entries", "Start a fresh history. Keeps accounts, categories and settings") { reset = ResetKind.ENTRIES }
+                        HorizontalDivider()
+                        SettingRow(Icons.Rounded.RestartAlt, "Reset app", "Delete everything on this phone and set up again") { reset = ResetKind.EVERYTHING }
                     }
                 }
             }
