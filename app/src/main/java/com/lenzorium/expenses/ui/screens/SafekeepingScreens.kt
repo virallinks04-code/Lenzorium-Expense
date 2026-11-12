@@ -196,12 +196,12 @@ fun SafekeepingScreen(state: LedgerState, nav: NavController) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(onClick = { nav.navigate(SafeRoutes.give()) }, modifier = Modifier.weight(1f).height(52.dp), shape = MaterialTheme.shapes.medium) {
-                        Icon(Icons.Rounded.Handshake, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("Give Money", maxLines = 1)
+                        Text("Give Money", maxLines = 1)
                     }
                     OutlinedButton(
                         onClick = { nav.navigate(SafeRoutes.receive()) }, enabled = t.outstanding > 0,
                         modifier = Modifier.weight(1f).height(52.dp), shape = MaterialTheme.shapes.medium,
-                    ) { Icon(Icons.Rounded.AssignmentReturned, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("Receive Back", maxLines = 1) }
+                    ) { Text("Receive Money Back", maxLines = 1, style = MaterialTheme.typography.labelLarge) }
                 }
             }
             item {
@@ -291,7 +291,7 @@ private fun HeroStat(label: String, value: String, modifier: Modifier) {
 private fun Initials(name: String, size: Int = 44) {
     Box(Modifier.size(size.dp).clip(CircleShape).background(MaterialTheme.colorScheme.tertiaryContainer), contentAlignment = Alignment.Center) {
         Text(
-            name.split(' ').filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() },
+            name.split(' ').map { w -> w.filter { it.isLetter() } }.filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() },
             style = if (size > 50) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onTertiaryContainer,
         )

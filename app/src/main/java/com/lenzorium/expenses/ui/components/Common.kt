@@ -146,8 +146,8 @@ fun txnIcon(t: Txn, cat: Category?): ImageVector = when (t.type) {
 }
 
 fun txnTitle(t: Txn, cat: Category?, person: String? = null): String = when (t.type) {
-    TxnType.SAFE_GIVEN -> "Given to ${person ?: "someone"} to keep"
-    TxnType.SAFE_RETURNED -> "Received back from ${person ?: "someone"}"
+    TxnType.SAFE_GIVEN -> "Given to ${person ?: "someone"}"
+    TxnType.SAFE_RETURNED -> "Back from ${person ?: "someone"}"
     TxnType.EXPENSE, TxnType.INCOME -> t.party.ifBlank { cat?.name ?: t.type.label }
     TxnType.LOAN_RECEIVED -> "Loan from ${t.party}"
     TxnType.LOAN_REPAYMENT -> "Repaid to ${t.party}"

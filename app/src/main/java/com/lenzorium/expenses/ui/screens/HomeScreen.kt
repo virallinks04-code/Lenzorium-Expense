@@ -246,8 +246,8 @@ fun HomeScreen(state: LedgerState, nav: NavController, repo: com.lenzorium.expen
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text("With others for safekeeping", style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f))
-                                Text(shown(state.safeTotals.outstanding) + " · yours to collect", style = MaterialTheme.typography.titleSmall, color = m.onHero, maxLines = 1)
+                                Text("With others (yours to collect)", style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f))
+                                Text(shown(state.safeTotals.outstanding), style = MaterialTheme.typography.titleSmall, color = m.onHero, maxLines = 1)
                             }
                             Text("${state.safeTotals.peopleHolding} ${if (state.safeTotals.peopleHolding == 1) "person" else "people"}", style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f))
                         }
