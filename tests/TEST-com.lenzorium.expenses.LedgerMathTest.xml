@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.lenzorium.expenses.LedgerMathTest" tests="16" skipped="0" failures="0" errors="0" timestamp="2026-11-12T01:35:21.680Z" hostname="runnervmwuk1x" time="0.015">
+  <properties/>
+  <testcase name="balanceAsOfDateForReports" classname="com.lenzorium.expenses.LedgerMathTest" time="0.001"/>
+  <testcase name="editingOrDeletingRecalculates" classname="com.lenzorium.expenses.LedgerMathTest" time="0.001"/>
+  <testcase name="openingLoanAddsDebtButNotCash" classname="com.lenzorium.expenses.LedgerMathTest" time="0.001"/>
+  <testcase name="repaymentOfOpeningLoanReducesBothBalanceAndDebt" classname="com.lenzorium.expenses.LedgerMathTest" time="0.0"/>
+  <testcase name="backdatedRepaymentCannotExceedDebtAtThatTime" classname="com.lenzorium.expenses.LedgerMathTest" time="0.008"/>
+  <testcase name="exactDecimalArithmetic" classname="com.lenzorium.expenses.LedgerMathTest" time="0.0"/>
+  <testcase name="borrowingIsNotIncomeAndRepaymentIsNotExpense" classname="com.lenzorium.expenses.LedgerMathTest" time="0.0"/>
+  <testcase name="repaymentExceedingDebtIsRejected" classname="com.lenzorium.expenses.LedgerMathTest" time="0.0"/>
+  <testcase name="debtAsOfDateIgnoresLaterLoans" classname="com.lenzorium.expenses.LedgerMathTest" time="0.0"/>
+  <testcase name="loanChargeIncreasesDebtOnly" classname="com.lenzorium.expenses.LedgerMathTest" time="0.0"/>
+  <testcase name="specVerificationExample" classname="com.lenzorium.expenses.LedgerMathTest" time="0.0"/>
+  <testcase name="accountBalanceAsOfDate" classname="com.lenzorium.expenses.LedgerMathTest" time="0.0"/>
+  <testcase name="loanStatusTransitions" classname="com.lenzorium.expenses.LedgerMathTest" time="0.001"/>
+  <testcase name="overdueFlag" classname="com.lenzorium.expenses.LedgerMathTest" time="0.0"/>
+  <testcase name="transferMovesMoneyButNotTotal" classname="com.lenzorium.expenses.LedgerMathTest" time="0.0"/>
+  <testcase name="accountsAddUpToAvailableBalance" classname="com.lenzorium.expenses.LedgerMathTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

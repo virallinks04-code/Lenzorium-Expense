@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.lenzorium.expenses.screenshots.CashGuardTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-11-12T01:35:22.011Z" hostname="runnervmwuk1x" time="7.387">
+  <properties/>
+  <testcase name="cashNeverGoesBelowZero" classname="com.lenzorium.expenses.screenshots.CashGuardTest" time="7.387"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.lenzorium.expenses.screenshots.ResetTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-11-12T01:35:29.562Z" hostname="runnervmwuk1x" time="0.224">
+  <properties/>
+  <testcase name="clearEntriesKeepsSetup" classname="com.lenzorium.expenses.screenshots.ResetTest" time="0.124"/>
+  <testcase name="resetAllStartsFromScratch" classname="com.lenzorium.expenses.screenshots.ResetTest" time="0.099"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

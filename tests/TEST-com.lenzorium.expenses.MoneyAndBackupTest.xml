@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.lenzorium.expenses.MoneyAndBackupTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-12T01:35:21.698Z" hostname="runnervmwuk1x" time="0.06">
+  <properties/>
+  <testcase name="parsesAmounts" classname="com.lenzorium.expenses.MoneyAndBackupTest" time="0.013"/>
+  <testcase name="backupRoundTripKeepsEverything" classname="com.lenzorium.expenses.MoneyAndBackupTest" time="0.022"/>
+  <testcase name="oldBackupWithoutAccountsIsUpgraded" classname="com.lenzorium.expenses.MoneyAndBackupTest" time="0.008"/>
+  <testcase name="reportOpeningAndClosingBalance" classname="com.lenzorium.expenses.MoneyAndBackupTest" time="0.008"/>
+  <testcase name="corruptBackupIsRejected" classname="com.lenzorium.expenses.MoneyAndBackupTest" time="0.006"/>
+  <testcase name="formatsAmountsWithCurrency" classname="com.lenzorium.expenses.MoneyAndBackupTest" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
