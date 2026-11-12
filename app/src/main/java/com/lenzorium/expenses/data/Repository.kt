@@ -12,6 +12,9 @@ import java.io.File
 import java.time.LocalDate
 import java.time.ZoneId
 
+/** Thrown inside [Repository.cashTx] to undo a change that would overdraw Cash or a wallet. */
+class CashNegativeException(message: String) : Exception(message)
+
 sealed class SaveResult {
     data class Ok(val id: Long) : SaveResult()
     data class Error(val message: String) : SaveResult()
@@ -151,7 +154,7 @@ class Repository(
             checkAccount(txn.accountId, "an account")?.let { return@withContext SaveResult.Error(it) }
         }
         try {
-            val id = db.withTransaction {
+            val id = cashTx {
                 if (txn.id == 0L) {
                     // A repeated tap re-sends the same requestId: return the record already saved.
                     dao.txnByRequest(txn.requestId)?.id ?: dao.insertTxn(txn)
@@ -161,6 +164,8 @@ class Repository(
             }
             oldReceiptToDelete?.let { receiptFile(it).delete() }
             SaveResult.Ok(id)
+        } catch (e: CashNegativeException) {
+            SaveResult.Error(e.message ?: "Not enough cash.")
         } catch (e: Exception) {
             SaveResult.Error("Couldn't save: ${e.message ?: "unknown error"}. Your entry is still here; try again.")
         }
@@ -179,9 +184,9 @@ class Repository(
             if (loan.id == 0L || current != intoAccount) checkAccount(intoAccount, "the account the money went into", ledgerOnly = true)?.let { return@withContext SaveResult.Error(it) }
         }
         try {
-            db.withTransaction {
+            cashTx {
                 if (loan.id == 0L) {
-                    dao.loanByRequest(loan.requestId)?.let { return@withTransaction SaveResult.Ok(it.id) }
+                    dao.loanByRequest(loan.requestId)?.let { return@cashTx SaveResult.Ok(it.id) }
                     val id = dao.insertLoan(loan)
                     if (!loan.isOpening) {
                         dao.insertTxn(
@@ -200,11 +205,11 @@ class Repository(
                     }
                     SaveResult.Ok(id)
                 } else {
-                    val existing = dao.loan(loan.id) ?: return@withTransaction SaveResult.Error("This loan no longer exists.")
+                    val existing = dao.loan(loan.id) ?: return@cashTx SaveResult.Error("This loan no longer exists.")
                     val fixed = loan.copy(isOpening = existing.isOpening, requestId = existing.requestId, createdAt = existing.createdAt)
                     val history = dao.txnsForLoan(loan.id)
                     LedgerMath.validateLoanTimeline(fixed, history, ::fmt)?.let {
-                        return@withTransaction SaveResult.Error("Can't change the loan this way. $it")
+                        return@cashTx SaveResult.Error("Can't change the loan this way. $it")
                     }
                     dao.updateLoan(fixed)
                     history.firstOrNull { it.type == TxnType.LOAN_RECEIVED }?.let { r ->
@@ -221,6 +226,8 @@ class Repository(
                     SaveResult.Ok(loan.id)
                 }
             }
+        } catch (e: CashNegativeException) {
+            SaveResult.Error(e.message ?: "Not enough cash.")
         } catch (e: Exception) {
             SaveResult.Error("Couldn't save: ${e.message ?: "unknown error"}. Your entry is still here; try again.")
         }
@@ -237,16 +244,18 @@ class Repository(
             if (txn.id == 0L || before != txn.accountId) checkAccount(txn.accountId, "the account you paid from", ledgerOnly = true)?.let { return@withContext SaveResult.Error(it) }
         }
         try {
-            db.withTransaction {
-                val loan = dao.loan(loanId) ?: return@withTransaction SaveResult.Error("This loan no longer exists.")
-                if (txn.id == 0L) dao.txnByRequest(txn.requestId)?.let { return@withTransaction SaveResult.Ok(it.id) }
+            cashTx {
+                val loan = dao.loan(loanId) ?: return@cashTx SaveResult.Error("This loan no longer exists.")
+                if (txn.id == 0L) dao.txnByRequest(txn.requestId)?.let { return@cashTx SaveResult.Ok(it.id) }
                 val others = dao.txnsForLoan(loanId).filter { it.id != txn.id }
                 val candidate = txn.copy(party = loan.lender)
                 LedgerMath.validateLoanTimeline(loan, others + candidate.copy(id = if (txn.id == 0L) Long.MAX_VALUE else txn.id), ::fmt)
-                    ?.let { return@withTransaction SaveResult.Error(it) }
+                    ?.let { return@cashTx SaveResult.Error(it) }
                 if (txn.id == 0L) SaveResult.Ok(dao.insertTxn(candidate))
                 else { dao.updateTxn(candidate); SaveResult.Ok(txn.id) }
             }
+        } catch (e: CashNegativeException) {
+            SaveResult.Error(e.message ?: "Not enough cash.")
         } catch (e: Exception) {
             SaveResult.Error("Couldn't save: ${e.message ?: "unknown error"}. Your entry is still here; try again.")
         }
@@ -255,28 +264,30 @@ class Repository(
     /** Deletes a single transaction. The "loan received" entry can only go with its loan. */
     suspend fun deleteTxn(id: Long): SaveResult = withContext(Dispatchers.IO) {
         try {
-            db.withTransaction {
-                val t = dao.txn(id) ?: return@withTransaction SaveResult.Ok(id)
+            cashTx {
+                val t = dao.txn(id) ?: return@cashTx SaveResult.Ok(id)
                 if (t.type == TxnType.LOAN_RECEIVED) {
-                    return@withTransaction SaveResult.Error("This entry is the money received for a loan. To remove it, delete the loan from the Loans screen, which also removes its repayments.")
+                    return@cashTx SaveResult.Error("This entry is the money received for a loan. To remove it, delete the loan from the Loans screen, which also removes its repayments.")
                 }
                 if (t.type == TxnType.LOAN_CHARGE && t.loanId != null) {
                     val loan = dao.loan(t.loanId)
                     if (loan != null) {
                         val rest = dao.txnsForLoan(t.loanId).filter { it.id != id }
                         LedgerMath.validateLoanTimeline(loan, rest, ::fmt)?.let {
-                            return@withTransaction SaveResult.Error("Can't delete this charge: later repayments depend on it. $it")
+                            return@cashTx SaveResult.Error("Can't delete this charge: later repayments depend on it. $it")
                         }
                     }
                 }
                 if (t.type.isSafekeeping) {
                     val related = t.personId?.let { dao.txnsForPerson(it) } ?: emptyList()
-                    SafeMath.check(related, t, null, ::fmt)?.let { return@withTransaction SaveResult.Error(it) }
+                    SafeMath.check(related, t, null, ::fmt)?.let { return@cashTx SaveResult.Error(it) }
                     audit(t.id, t.personId, "DELETED", describeSafe(t))
                 }
                 dao.deleteTxn(t)
                 SaveResult.Ok(id)
             }
+        } catch (e: CashNegativeException) {
+            SaveResult.Error(e.message ?: "Not enough cash.")
         } catch (e: Exception) {
             SaveResult.Error("Couldn't delete: ${e.message ?: "unknown error"}")
         }
@@ -285,12 +296,14 @@ class Repository(
     /** Deletes a loan together with its full linked history, atomically. */
     suspend fun deleteLoan(id: Long): SaveResult = withContext(Dispatchers.IO) {
         try {
-            db.withTransaction {
-                val loan = dao.loan(id) ?: return@withTransaction SaveResult.Ok(id)
+            cashTx {
+                val loan = dao.loan(id) ?: return@cashTx SaveResult.Ok(id)
                 dao.deleteTxnsForLoan(id)
                 dao.deleteLoan(loan)
                 SaveResult.Ok(id)
             }
+        } catch (e: CashNegativeException) {
+            SaveResult.Error(e.message ?: "Not enough cash.")
         } catch (e: Exception) {
             SaveResult.Error("Couldn't delete: ${e.message ?: "unknown error"}")
         }
@@ -298,16 +311,16 @@ class Repository(
 
     /** Undo for [deleteTxn]: puts the exact record back (same id and receipt). */
     suspend fun restoreTxn(t: Txn) = withContext(Dispatchers.IO) {
-        db.withTransaction {
+        runCatching { cashTx {
             if (dao.txn(t.id) == null) {
                 if (t.type.isSafekeeping) {
                     val related = t.personId?.let { dao.txnsForPerson(it) } ?: emptyList()
-                    if (SafeMath.check(related, null, t, ::fmt) != null) return@withTransaction
+                    if (SafeMath.check(related, null, t, ::fmt) != null) return@cashTx
                     audit(t.id, t.personId, "RESTORED", describeSafe(t))
                 }
                 dao.insertTxn(t)
             }
-        }
+        } }
     }
 
     /** Everything needed to undo a loan deletion. */
@@ -316,12 +329,12 @@ class Repository(
     }
 
     suspend fun restoreLoan(loan: Loan, history: List<Txn>) = withContext(Dispatchers.IO) {
-        db.withTransaction {
+        runCatching { cashTx {
             if (dao.loan(loan.id) == null) {
                 dao.insertLoan(loan)
                 dao.insertTxns(history.filter { dao.txn(it.id) == null })
             }
-        }
+        } }
     }
 
     /** Removes receipt photos no record points to (abandoned forms, deletions older than a day). */
@@ -346,11 +359,13 @@ class Repository(
         if (before?.accountId != txn.accountId) checkAccount(txn.accountId, "the account to move money from")?.let { return@withContext SaveResult.Error(it) }
         if (before?.toAccountId != txn.toAccountId) checkAccount(txn.toAccountId, "the account to move money to")?.let { return@withContext SaveResult.Error(it) }
         try {
-            val id = db.withTransaction {
+            val id = cashTx {
                 if (txn.id == 0L) dao.txnByRequest(txn.requestId)?.id ?: dao.insertTxn(txn)
                 else { dao.updateTxn(txn); txn.id }
             }
             SaveResult.Ok(id)
+        } catch (e: CashNegativeException) {
+            SaveResult.Error(e.message ?: "Not enough cash.")
         } catch (e: Exception) {
             SaveResult.Error("Couldn't save: ${e.message ?: "unknown error"}. Your entry is still here; try again.")
         }
@@ -377,7 +392,12 @@ class Repository(
         val main = settings.current.currencyCode
         if (cur != null && dao.allAccounts().none { it.id != a.id && !it.archived && (it.currency == null || it.currency == main) })
             return@withContext SaveResult.Error("Keep at least one account in your main currency ($main).")
-        dao.updateAccount(a.copy(name = n, currency = cur)); SaveResult.Ok(a.id)
+        try {
+            cashTx { dao.updateAccount(a.copy(name = n, currency = cur)) }
+            SaveResult.Ok(a.id)
+        } catch (e: CashNegativeException) {
+            SaveResult.Error(e.message ?: "Not enough cash.")
+        }
     }
 
     /** Deletes an account only if nothing uses it; otherwise it should be archived. */
@@ -425,6 +445,41 @@ class Repository(
     suspend fun canMoveTrackingStart(newStartEpochDay: Long): Boolean = withContext(Dispatchers.IO) {
         val ms = LocalDate.ofEpochDay(newStartEpochDay).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         dao.allTxns().none { it.timestamp < ms }
+    }
+
+
+    // ---------- Cash can never go below zero ----------
+
+    /** Accounts that can't be overdrawn: physical cash and mobile wallets. Bank accounts may (overdraft). */
+    private fun noOverdraft(a: Account) = a.kind == AccountKind.CASH || a.kind == AccountKind.WALLET
+
+    private suspend fun cashBalances(): Map<Long, Pair<Account, Long>> {
+        val accs = dao.allAccounts().filter(::noOverdraft)
+        if (accs.isEmpty()) return emptyMap()
+        val txns = dao.allTxns()
+        return accs.associate { it.id to (it to LedgerMath.accountBalance(it, txns)) }
+    }
+
+    /**
+     * Runs [block] in one database transaction and rolls it back if it would leave a Cash or wallet account
+     * below zero. Changes that don't lower an already-negative balance (e.g. deleting an expense) are allowed.
+     */
+    private suspend fun <R> cashTx(block: suspend () -> R): R = db.withTransaction {
+        val before = cashBalances()
+        val result = block()
+        for ((id, pair) in cashBalances()) {
+            val (acc, after) = pair
+            val was = before[id]?.second ?: acc.openingMinor
+            if (after < 0 && after < was) {
+                val cur = acc.currency?.let { com.lenzorium.expenses.domain.Currencies.find(it) } ?: settings.current.currency
+                throw CashNegativeException(
+                    "Not enough money in ${acc.name}. It has ${Money.format(was.coerceAtLeast(0), cur)}, so this would leave it at ${Money.format(after, cur)}, " +
+                        "and ${acc.name} can't go below zero. If the money came from another account, choose that one; " +
+                        "if you took cash out of the bank first, record that as a transfer from Bank to ${acc.name}."
+                )
+            }
+        }
+        result
     }
 
     // ---------- Money given for safekeeping ----------
@@ -503,18 +558,18 @@ class Repository(
         if (txn.amountMinor <= 0) return@withContext SaveResult.Error("Enter an amount greater than zero.")
         checkDate(txn.timestamp)?.let { return@withContext SaveResult.Error(it) }
         try {
-            db.withTransaction {
-                dao.holder(pid) ?: return@withTransaction SaveResult.Error("That person no longer exists.")
-                val old = if (txn.id != 0L) dao.txn(txn.id) ?: return@withTransaction SaveResult.Error("This entry no longer exists.") else null
+            cashTx {
+                dao.holder(pid) ?: return@cashTx SaveResult.Error("That person no longer exists.")
+                val old = if (txn.id != 0L) dao.txn(txn.id) ?: return@cashTx SaveResult.Error("This entry no longer exists.") else null
                 if (old == null || old.accountId != txn.accountId)
                     checkAccount(txn.accountId, if (txn.type == TxnType.SAFE_GIVEN) "where the money came from" else "where the money was received", ledgerOnly = true)
-                        ?.let { return@withTransaction SaveResult.Error(it) }
+                        ?.let { return@cashTx SaveResult.Error(it) }
                 if (txn.type == TxnType.SAFE_GIVEN && txn.dueEpochDay != null) {
                     val day = java.time.Instant.ofEpochMilli(txn.timestamp).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay()
-                    if (txn.dueEpochDay < day) return@withTransaction SaveResult.Error("The expected return date is before the date given.")
+                    if (txn.dueEpochDay < day) return@cashTx SaveResult.Error("The expected return date is before the date given.")
                 }
                 val related = (dao.txnsForPerson(pid) + (old?.personId?.takeIf { it != pid }?.let { dao.txnsForPerson(it) } ?: emptyList())).distinctBy { it.id }
-                SafeMath.check(related, old, txn, ::fmt)?.let { return@withTransaction SaveResult.Error(it) }
+                SafeMath.check(related, old, txn, ::fmt)?.let { return@cashTx SaveResult.Error(it) }
                 val clean = txn.copy(party = txn.party.trim(), notes = txn.notes.trim(), categoryId = null, loanId = null, toAccountId = null, toAmountMinor = null,
                     dueEpochDay = if (txn.type == TxnType.SAFE_GIVEN) txn.dueEpochDay else null)
                 val id = if (old == null) {
@@ -525,9 +580,10 @@ class Repository(
                     audit(clean.id, pid, "EDITED", diffSafe(old, clean))
                     clean.id
                 }
-                oldReceiptToDelete?.let { receiptFile(it).delete() }
                 SaveResult.Ok(id)
-            }
+            }.also { if (it is SaveResult.Ok) oldReceiptToDelete?.let { f -> receiptFile(f).delete() } }
+        } catch (e: CashNegativeException) {
+            SaveResult.Error(e.message ?: "Not enough cash.")
         } catch (e: Exception) {
             SaveResult.Error("Couldn't save: ${e.message ?: "unknown error"}")
         }
@@ -613,7 +669,7 @@ class Repository(
             checkDate(paidAt)?.let { return@withContext SaveResult.Error(it) }
             checkAccount(accountId, "an account", ledgerOnly = true)?.let { return@withContext SaveResult.Error(it) }
             try {
-                db.withTransaction {
+                cashTx {
                     val req = "rec-$id-$dueEpochDay"
                     val existing = dao.txnByRequest(req)
                     val txnId = existing?.id ?: dao.insertTxn(
@@ -626,6 +682,8 @@ class Repository(
                     if (r.nextDueEpochDay == dueEpochDay) advance(r)
                     SaveResult.Ok(txnId)
                 }
+            } catch (e: CashNegativeException) {
+                SaveResult.Error(e.message ?: "Not enough cash.")
             } catch (e: Exception) {
                 SaveResult.Error("Couldn't save: ${e.message ?: "unknown error"}")
             }
