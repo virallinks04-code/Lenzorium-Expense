@@ -70,6 +70,13 @@ object SampleData {
         t(TxnType.EXPENSE, 1_800, "Entertainment", at(3, 21, 0), "Cinepax").copy(tags = "family,weekend"),
         t(TxnType.LOAN_REPAYMENT, 10_000, null, at(5, 10, 0), "Ali Raza", PayMethod.BANK, loanId = 1),
         Txn(id = 100, type = TxnType.TRANSFER, amountMinor = 10_000_00, timestamp = at(4, 18, 30), notes = "ATM withdrawal", requestId = "s100", createdAt = 0, accountId = 2, toAccountId = 1),
+        Txn(id = 201, type = TxnType.SAFE_GIVEN, amountMinor = 50_000_00, timestamp = at(9, 10, 0), party = "Keep for Eid shopping", requestId = "s201", createdAt = 0, accountId = 1, personId = 1, dueEpochDay = today.plusDays(20).toEpochDay()),
+        Txn(id = 202, type = TxnType.SAFE_RETURNED, amountMinor = 10_000_00, timestamp = at(6, 18, 0), requestId = "s202", createdAt = 0, accountId = 1, personId = 1),
+        Txn(id = 203, type = TxnType.SAFE_RETURNED, amountMinor = 15_000_00, timestamp = at(3, 18, 0), requestId = "s203", createdAt = 0, accountId = 2, personId = 1),
+        Txn(id = 204, type = TxnType.SAFE_RETURNED, amountMinor = 5_000_00, timestamp = at(1, 18, 0), requestId = "s204", createdAt = 0, accountId = 1, personId = 1),
+        Txn(id = 205, type = TxnType.SAFE_GIVEN, amountMinor = 20_000_00, timestamp = at(9, 12, 0), party = "Shop float", requestId = "s205", createdAt = 0, accountId = 2, personId = 2, dueEpochDay = today.minusDays(1).toEpochDay()),
+        Txn(id = 206, type = TxnType.SAFE_GIVEN, amountMinor = 8_000_00, timestamp = at(8, 12, 0), requestId = "s206", createdAt = 0, accountId = 1, personId = 3),
+        Txn(id = 207, type = TxnType.SAFE_RETURNED, amountMinor = 8_000_00, timestamp = at(2, 12, 0), requestId = "s207", createdAt = 0, accountId = 1, personId = 3),
         Txn(id = 102, type = TxnType.TRANSFER, amountMinor = 37_000_00, toAmountMinor = 100_00, timestamp = at(7, 11, 0), notes = "Sent to UK", requestId = "s102", createdAt = 0, accountId = 2, toAccountId = 4),
         Txn(id = 103, type = TxnType.EXPENSE, amountMinor = 12_50, categoryId = cat("Food"), timestamp = at(6, 13, 0), party = "Pret", requestId = "s103", createdAt = 0, accountId = 4),
         Txn(id = 101, type = TxnType.TRANSFER, amountMinor = 3_000_00, timestamp = at(9, 12, 0), notes = "Top-up", requestId = "s101", createdAt = 0, accountId = 2, toAccountId = 3),
@@ -125,6 +132,15 @@ object SampleData {
         ),
     )
 
-    val state = LedgerState(loaded = true, settings = settings, txns = txns, loans = loans, categories = categories, accounts = accounts, plans = plans)
+    private val holders = listOf(
+        com.lenzorium.expenses.data.Holder(1, "Bilal Ahmed", "0300 1234567", "Brother", 0),
+        com.lenzorium.expenses.data.Holder(2, "Usman (shop)", "0321 7654321", "", 0),
+        com.lenzorium.expenses.data.Holder(3, "Ayesha Khan", "", "", 0),
+    )
+    private val audit = listOf(
+        com.lenzorium.expenses.data.AuditEntry(1, 201, 1, "CREATED", "Gave Rs 50,000.00 to Bilal Ahmed from Cash", System.currentTimeMillis() - 9 * 86_400_000L),
+        com.lenzorium.expenses.data.AuditEntry(2, 203, 1, "EDITED", "Edited: amount Rs 12,000.00 → Rs 15,000.00", System.currentTimeMillis() - 3 * 86_400_000L),
+    )
+    val state = LedgerState(loaded = true, settings = settings, txns = txns.sortedByDescending { it.timestamp }, loans = loans, categories = categories, accounts = accounts, plans = plans.copy(holders = holders, audit = audit))
     val empty = LedgerState(loaded = true, settings = settings, txns = emptyList(), loans = emptyList(), categories = categories, accounts = accounts.take(2).map { it.copy(openingMinor = if (it.id == 1L) 15_000_00 else 70_000_00) })
 }

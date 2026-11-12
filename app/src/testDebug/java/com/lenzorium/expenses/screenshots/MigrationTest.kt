@@ -48,7 +48,7 @@ class MigrationTest {
         }
 
         val room = Room.databaseBuilder(ctx, AppDatabase::class.java, name)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
             .allowMainThreadQueries()
             .build()
         runBlocking {
@@ -73,6 +73,9 @@ class MigrationTest {
             // New tables work after the upgrade.
             dao.insertBudget(com.lenzorium.expenses.data.Budget(categoryId = null, limitMinor = 1000, startMonthEpochDay = 0, createdAt = 0))
             assertEquals(1, dao.allBudgets().size)
+            // Version 4: safekeeping tables exist and old entries have no person.
+            assertNull(txns[1]!!.personId)
+            assertEquals(0, dao.allHolders().size + dao.allAudit().size)
         }
         room.close()
     }

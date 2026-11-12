@@ -46,6 +46,11 @@ data class LedgerState(
     val today: Long get() = LocalDate.now().toEpochDay()
     val thisMonth: YearMonth get() = YearMonth.now()
 
+    /** Money given for safekeeping, per person (only main-currency accounts are used for it). */
+    val safeSummaries: List<com.lenzorium.expenses.domain.HolderSummary> by lazy { com.lenzorium.expenses.domain.SafeMath.summaries(plans.holders, txns) }
+    val safeTotals: com.lenzorium.expenses.domain.SafeTotals by lazy { com.lenzorium.expenses.domain.SafeMath.totals(safeSummaries) }
+    val holderById: Map<Long, com.lenzorium.expenses.data.Holder> by lazy { plans.holders.associateBy { it.id } }
+
     val budgetStatuses: List<BudgetStatus> by lazy { budgets.map { PlanMath.status(it, ledgerTxns, thisMonth) } }
     val overallBudget: BudgetStatus? get() = budgetStatuses.firstOrNull { it.budget.categoryId == null }
     val categoryBudgets: List<BudgetStatus> get() = budgetStatuses.filter { it.budget.categoryId != null }
@@ -104,6 +109,8 @@ data class PlanData(
     val templates: List<Template> = emptyList(),
     val goals: List<Goal> = emptyList(),
     val goalEntries: List<GoalEntry> = emptyList(),
+    val holders: List<com.lenzorium.expenses.data.Holder> = emptyList(),
+    val audit: List<com.lenzorium.expenses.data.AuditEntry> = emptyList(),
 )
 
 class MainViewModel(val repo: Repository) : ViewModel() {
@@ -111,7 +118,8 @@ class MainViewModel(val repo: Repository) : ViewModel() {
     private val ledger = combine(
         repo.settings.state, repo.txns, repo.loans, repo.categories, repo.accounts,
     ) { s, t, l, c, a -> LedgerState(true, s, t, l, c, a) }
-    val state: StateFlow<LedgerState> = combine(ledger, plans) { l, p -> l.copy(plans = p) }
+    private val safe = combine(repo.holders, repo.audit) { h, a -> h to a }
+    val state: StateFlow<LedgerState> = combine(ledger, plans, safe) { l, p, s -> l.copy(plans = p.copy(holders = s.first, audit = s.second)) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, LedgerState(settings = repo.settings.current))
 
     init {

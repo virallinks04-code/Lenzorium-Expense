@@ -13,9 +13,14 @@ enum class TxnType {
     LOAN_REPAYMENT,
     LOAN_CHARGE,
     /** Money moved between two of the user's accounts (e.g. ATM withdrawal). Total balance is unchanged. */
-    TRANSFER;
+    TRANSFER,
+    /** Our money handed to someone to keep for us. Not an expense: it is a receivable we can collect back. */
+    SAFE_GIVEN,
+    /** Part or all of that money collected back. Not income: it's our own money returning. */
+    SAFE_RETURNED;
 
     val isLoanRelated: Boolean get() = this == LOAN_RECEIVED || this == LOAN_REPAYMENT || this == LOAN_CHARGE
+    val isSafekeeping: Boolean get() = this == SAFE_GIVEN || this == SAFE_RETURNED
 
     val label: String
         get() = when (this) {
@@ -25,6 +30,8 @@ enum class TxnType {
             LOAN_REPAYMENT -> "Loan repayment"
             LOAN_CHARGE -> "Loan charge"
             TRANSFER -> "Transfer"
+            SAFE_GIVEN -> "Given for safekeeping"
+            SAFE_RETURNED -> "Received back"
         }
 }
 
@@ -131,6 +138,10 @@ data class Txn(
     val recurringId: Long? = null,
     /** For a transfer between accounts in different currencies: the amount that arrived, in the destination's currency. */
     val toAmountMinor: Long? = null,
+    /** Safekeeping: the person holding the money. (For these entries [party] holds the purpose.) */
+    val personId: Long? = null,
+    /** Safekeeping: expected return date (LocalDate.toEpochDay()), optional. */
+    val dueEpochDay: Long? = null,
 ) {
     val tagList: List<String> get() = Tags.parse(tags)
 }

@@ -52,6 +52,8 @@ class BackupManager(private val context: Context, private val repo: Repository) 
         templates = dao.allTemplates(),
         goals = dao.allGoals(),
         goalEntries = dao.allGoalEntries(),
+        holders = dao.allHolders(),
+        audit = dao.allAudit(),
     )
 
     /** Writes a complete backup to [raw] and closes it. Returns the number of entries. */
@@ -162,6 +164,9 @@ class BackupManager(private val context: Context, private val repo: Repository) 
                 dao.clearCategories()
                 dao.clearAccounts()
                 dao.clearBudgets(); dao.clearRecurring(); dao.clearTemplates(); dao.clearGoalEntries(); dao.clearGoals()
+                dao.clearHolders(); dao.clearAudit()
+                dao.insertHolders(data.holders)
+                dao.insertAuditList(data.audit)
                 dao.insertAccounts(data.accounts)
                 dao.insertCategories(data.categories)
                 dao.insertLoans(data.loans)

@@ -6,6 +6,8 @@ import com.lenzorium.expenses.data.AppDatabase
 import com.lenzorium.expenses.data.AppSettings
 import com.lenzorium.expenses.data.DefaultAccounts
 import com.lenzorium.expenses.data.Budget
+import com.lenzorium.expenses.data.Holder
+import com.lenzorium.expenses.data.AuditEntry
 import com.lenzorium.expenses.data.Category
 import com.lenzorium.expenses.data.Frequency
 import com.lenzorium.expenses.data.Goal
@@ -34,6 +36,8 @@ data class BackupData(
     val templates: List<Template> = emptyList(),
     val goals: List<Goal> = emptyList(),
     val goalEntries: List<GoalEntry> = emptyList(),
+    val holders: List<Holder> = emptyList(),
+    val audit: List<AuditEntry> = emptyList(),
 )
 
 class BackupFormatException(message: String) : Exception(message)
@@ -41,7 +45,7 @@ class BackupFormatException(message: String) : Exception(message)
 /** JSON encoding of a full backup. Pure Kotlin + org.json so it can be unit-tested. */
 object BackupCodec {
     const val FORMAT = "lenzorium-expenses-backup"
-    const val VERSION = 3
+    const val VERSION = 4
 
     fun encode(d: BackupData): String {
         val root = JSONObject()
@@ -98,6 +102,7 @@ object BackupCodec {
                     put("requestId", t.requestId); put("createdAt", t.createdAt)
                     put("accountId", t.accountId ?: JSONObject.NULL); put("toAccountId", t.toAccountId ?: JSONObject.NULL)
                     put("tags", t.tags); put("recurringId", t.recurringId ?: JSONObject.NULL); put("toAmountMinor", t.toAmountMinor ?: JSONObject.NULL)
+                    put("personId", t.personId ?: JSONObject.NULL); put("dueEpochDay", t.dueEpochDay ?: JSONObject.NULL)
                 })
             }
         })
@@ -135,6 +140,19 @@ object BackupCodec {
                     put("id", g.id); put("name", g.name); put("targetMinor", g.targetMinor); put("targetEpochDay", g.targetEpochDay ?: JSONObject.NULL)
                     put("accountId", g.accountId ?: JSONObject.NULL); put("iconKey", g.iconKey); put("colorArgb", g.colorArgb)
                     put("archived", g.archived); put("createdAt", g.createdAt)
+                })
+            }
+        })
+        root.put("holders", JSONArray().apply {
+            d.holders.forEach { h ->
+                put(JSONObject().apply { put("id", h.id); put("name", h.name); put("phone", h.phone); put("notes", h.notes); put("createdAt", h.createdAt) })
+            }
+        })
+        root.put("audit", JSONArray().apply {
+            d.audit.forEach { a ->
+                put(JSONObject().apply {
+                    put("id", a.id); put("txnId", a.txnId ?: JSONObject.NULL); put("personId", a.personId ?: JSONObject.NULL)
+                    put("action", a.action); put("details", a.details); put("at", a.at)
                 })
             }
         })
@@ -214,6 +232,7 @@ object BackupCodec {
                         requestId = o.getString("requestId"), createdAt = o.getLong("createdAt"),
                         accountId = o.optLongOrNull("accountId"), toAccountId = o.optLongOrNull("toAccountId"),
                         tags = o.optString("tags", ""), recurringId = o.optLongOrNull("recurringId"), toAmountMinor = o.optLongOrNull("toAmountMinor"),
+                        personId = o.optLongOrNull("personId"), dueEpochDay = o.optLongOrNull("dueEpochDay"),
                     )
                 }
             }
@@ -276,11 +295,20 @@ object BackupCodec {
             val goalEntries = arr("goalEntries").each { o ->
                 GoalEntry(o.getLong("id"), o.getLong("goalId"), o.getLong("amountMinor"), o.getLong("epochDay"), o.optString("note", ""), o.optLong("createdAt", 0L))
             }
+            val holders = arr("holders").each { o -> Holder(o.getLong("id"), o.getString("name"), o.optString("phone", ""), o.optString("notes", ""), o.optLong("createdAt", 0L)) }
+            val audit = arr("audit").each { o -> AuditEntry(o.getLong("id"), o.optLongOrNull("txnId"), o.optLongOrNull("personId"), o.getString("action"), o.optString("details", ""), o.optLong("at", 0L)) }
+            val holderIds = holders.map { it.id }.toSet()
+            if (holderIds.size != holders.size) throw BackupFormatException("The backup contains duplicate people.")
+            if (finalTxns.any { it.type.isSafekeeping && (it.personId == null || it.personId !in holderIds) })
+                throw BackupFormatException("A safekeeping entry in the backup refers to a missing person.")
+            for (h in holders) {
+                if (com.lenzorium.expenses.domain.SafeMath.remaining(finalTxns, h.id) < 0) throw BackupFormatException("The backup shows more received back from ${h.name} than was given.")
+            }
             validate(cats, loans, finalTxns, accounts)
             validatePlans(cats, accounts, budgets, recurring, templates, goals, goalEntries)
             return BackupData(
                 settings.copy(accountsMigrated = true), cats, loans, finalTxns, root.optLong("createdAt", 0L), accounts,
-                budgets, recurring, templates, goals, goalEntries,
+                budgets, recurring, templates, goals, goalEntries, holders, audit,
             )
         } catch (e: BackupFormatException) {
             throw e

@@ -32,6 +32,9 @@ data class PeriodTotals(
     val incomeByCategory: Map<Long?, Long>,
     /** Money moved into (+) or out of (−) the main currency through transfers with foreign-currency accounts. */
     val exchangeNet: Long = 0L,
+    /** Money given for safekeeping / collected back in the period (neither expense nor income). */
+    val safeGiven: Long = 0L,
+    val safeReturned: Long = 0L,
 )
 
 /**
@@ -60,7 +63,7 @@ object LedgerMath {
         }
         TxnType.LOAN_CHARGE -> 0L
         else -> if (t.accountId != null && t.accountId in foreign) 0L else when (t.type) {
-            TxnType.INCOME, TxnType.LOAN_RECEIVED -> t.amountMinor
+            TxnType.INCOME, TxnType.LOAN_RECEIVED, TxnType.SAFE_RETURNED -> t.amountMinor
             else -> -t.amountMinor
         }
     }
@@ -70,8 +73,8 @@ object LedgerMath {
 
     /** Effect of a transaction on one account's balance. */
     fun accountDelta(t: Txn, accountId: Long): Long = when (t.type) {
-        TxnType.INCOME, TxnType.LOAN_RECEIVED -> if (t.accountId == accountId) t.amountMinor else 0L
-        TxnType.EXPENSE, TxnType.LOAN_REPAYMENT -> if (t.accountId == accountId) -t.amountMinor else 0L
+        TxnType.INCOME, TxnType.LOAN_RECEIVED, TxnType.SAFE_RETURNED -> if (t.accountId == accountId) t.amountMinor else 0L
+        TxnType.EXPENSE, TxnType.LOAN_REPAYMENT, TxnType.SAFE_GIVEN -> if (t.accountId == accountId) -t.amountMinor else 0L
         TxnType.TRANSFER ->
             (if (t.toAccountId == accountId) received(t) else 0L) - (if (t.accountId == accountId) t.amountMinor else 0L)
         TxnType.LOAN_CHARGE -> 0L
@@ -174,6 +177,8 @@ object LedgerMath {
     /** Totals for transactions with start <= timestamp < endExclusive. */
     fun periodTotals(txns: List<Txn>, start: Long, endExclusive: Long, foreign: Set<Long> = emptySet()): PeriodTotals {
         var exchange = 0L
+        var safeGiven = 0L
+        var safeReturned = 0L
         var income = 0L
         var expenses = 0L
         var borrowed = 0L
@@ -197,9 +202,11 @@ object LedgerMath {
                 TxnType.LOAN_RECEIVED -> borrowed += t.amountMinor
                 TxnType.LOAN_REPAYMENT -> repayments += t.amountMinor
                 TxnType.LOAN_CHARGE -> charges += t.amountMinor
+                TxnType.SAFE_GIVEN -> safeGiven += t.amountMinor
+                TxnType.SAFE_RETURNED -> safeReturned += t.amountMinor
                 TxnType.TRANSFER -> Unit
             }
         }
-        return PeriodTotals(income, expenses, borrowed, repayments, charges, byCat, incByCat, exchange)
+        return PeriodTotals(income, expenses, borrowed, repayments, charges, byCat, incByCat, exchange, safeGiven, safeReturned)
     }
 }

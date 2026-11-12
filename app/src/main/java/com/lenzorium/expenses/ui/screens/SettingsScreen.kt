@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AccountBalance
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Handshake
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.DonutLarge
@@ -139,6 +140,11 @@ fun SettingsScreen(state: LedgerState, repo: Repository, nav: NavController) {
                         ) { nav.navigate(PlanRoutes.BILLS) }
                         HorizontalDivider()
                         SettingRow(Icons.Rounded.Flag, "Savings goals", if (state.goalProgress.isEmpty()) "Save step by step for something" else "${Money.format(state.setAside, c)} set aside") { nav.navigate(PlanRoutes.GOALS) }
+                        HorizontalDivider()
+                        SettingRow(
+                            Icons.Rounded.Handshake, "Money with others",
+                            if (state.safeTotals.outstanding > 0) "${Money.format(state.safeTotals.outstanding, c)} with ${state.safeTotals.peopleHolding} ${if (state.safeTotals.peopleHolding == 1) "person" else "people"}" else "Money given to someone for safekeeping",
+                        ) { nav.navigate(SafeRoutes.HOME) }
                         HorizontalDivider()
                         SettingRow(Icons.Rounded.AccountBalance, "Loans", state.debt.takeIf { it > 0 }?.let { "${Money.format(it, c)} outstanding" } ?: "Money you borrowed") { nav.navigate(Routes.LOANS) }
                         HorizontalDivider()

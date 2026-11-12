@@ -29,7 +29,9 @@ object ReportExporter {
 
     private fun ldt(ms: Long) = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDateTime()
 
-    private fun describe(t: com.lenzorium.expenses.data.Txn, cats: Map<Long, Category>, loans: Map<Long, Loan>): String = when (t.type) {
+    private fun describe(t: com.lenzorium.expenses.data.Txn, cats: Map<Long, Category>, loans: Map<Long, Loan>, people: Map<Long, String> = emptyMap()): String = when (t.type) {
+        TxnType.SAFE_GIVEN -> "Given to ${t.personId?.let { people[it] } ?: "?"} for safekeeping" + (t.party.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "")
+        TxnType.SAFE_RETURNED -> "Received back from ${t.personId?.let { people[it] } ?: "?"}"
         TxnType.EXPENSE, TxnType.INCOME -> t.party.ifBlank { t.categoryId?.let { cats[it]?.name } ?: "" }
         TxnType.TRANSFER -> t.notes.ifBlank { "Transfer" }
         else -> {
@@ -65,6 +67,11 @@ object ReportExporter {
         row("Outstanding debt now (current)", n(r.debtNow))
         r.accountClosing.forEach { a -> row("Closing balance: ${a.name}" + (a.currency?.let { " (${it.code})" } ?: ""), a.currency?.let { Money.number(a.minor, it.decimals) } ?: n(a.minor)) }
         if (r.totals.exchangeNet != 0L) row("Currency exchange with other-currency accounts", n(r.totals.exchangeNet))
+        if (r.totals.safeGiven != 0L || r.totals.safeReturned != 0L || r.safeOutstandingAtEnd != 0L) {
+            row("Given for safekeeping (not expenses)", n(r.totals.safeGiven))
+            row("Received back from safekeeping (not income)", n(r.totals.safeReturned))
+            row("Still with others at period end (owed to you)", n(r.safeOutstandingAtEnd))
+        }
         row()
         row("Expenses by category", "Amount")
         r.expenseByCategory.forEach { row(it.name, n(it.amount)) }
@@ -81,7 +88,7 @@ object ReportExporter {
             row(
                 d.format(dateFmt), d.format(timeFmt), t.type.label,
                 t.categoryId?.let { cats[it]?.name } ?: "",
-                describe(t, cats, loanMap),
+                describe(t, cats, loanMap, r.personNames),
                 r.accountLabel(t),
                 (t.accountId?.let { r.accountCurrency[it] })?.let { Money.number(t.amountMinor, it.decimals) } ?: n(t.amountMinor),
                 (t.accountId?.let { r.accountCurrency[it] } ?: c).code,
@@ -177,6 +184,12 @@ object ReportExporter {
             line("Closing available balance", f(r.closingBalance), bold)
             r.accountClosing.forEach { a -> line("   ${a.name}", a.currency?.let { Money.format(a.minor, it) } ?: f(a.minor)) }
             if (r.totals.exchangeNet != 0L) line("Includes currency exchange", Money.formatSigned(r.totals.exchangeNet, c), muted)
+            if (r.totals.safeGiven != 0L || r.totals.safeReturned != 0L || r.safeOutstandingAtEnd != 0L) {
+                heading("Money with others for safekeeping (not expenses or income)")
+                line("Given in period", f(r.totals.safeGiven))
+                line("Received back in period", f(r.totals.safeReturned))
+                line("Still with others (owed to you)", f(r.safeOutstandingAtEnd), bold)
+            }
 
             heading("Borrowing (kept separate from income and expenses)")
             line("Money borrowed in period", f(r.totals.borrowed))
@@ -225,7 +238,7 @@ object ReportExporter {
             if (r.txns.isEmpty()) line("No transactions in this period.", p = muted)
             r.txns.forEach { t ->
                 val d = ldt(t.timestamp)
-                val desc = describe(t, cats, loanMap)
+                val desc = describe(t, cats, loanMap, r.personNames)
                 val cat = t.categoryId?.let { cats[it]?.name }
                 val left = d.format(DateTimeFormatter.ofPattern("dd MMM HH:mm")) + "  " + t.type.label + " · " +
                     listOfNotNull(desc.ifBlank { null }, cat?.takeIf { it != desc }, r.accountLabel(t).ifBlank { null }).joinToString(" · ")

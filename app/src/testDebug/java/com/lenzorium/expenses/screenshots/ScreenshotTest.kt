@@ -35,6 +35,9 @@ import com.lenzorium.expenses.ui.screens.LockScreen
 import com.lenzorium.expenses.ui.screens.SetupScreen
 import com.lenzorium.expenses.ui.screens.TxnDetailScreen
 import com.lenzorium.expenses.ui.screens.PlanRoutes
+import com.lenzorium.expenses.ui.screens.SafeRoutes
+import com.lenzorium.expenses.ui.screens.SafePersonScreen
+import com.lenzorium.expenses.ui.screens.SafeFormScreen
 import com.lenzorium.expenses.ui.screens.ProfileScreen
 import com.lenzorium.expenses.ui.screens.RecurringFormScreen
 import com.lenzorium.expenses.ui.screens.GoalDetailScreen
@@ -131,6 +134,11 @@ class ScreenshotTest {
     @Config(qualifiers = "w360dp-h1100dp-xxhdpi") @Test fun profileSignedIn() = shot("26_profile_signed_in") {
         ProfileScreen(s.copy(settings = s.settings.copy(profileName = "Ahmed Khan", googleEmail = "ahmed.khan@gmail.com", driveLast = System.currentTimeMillis() - 3_600_000)), repo, it)
     }
+    @Config(qualifiers = "w360dp-h1500dp-xxhdpi") @Test fun safeHome() = tab("27_safekeeping", SafeRoutes.HOME)
+    @Config(qualifiers = "w360dp-h1300dp-xxhdpi") @Test fun safePerson() = shot("28_safe_person") { SafePersonScreen(s, repo, 1, it) }
+    @Config(qualifiers = "w360dp-h1600dp-xxhdpi") @Test fun safeGive() = shot("29_safe_give") { SafeFormScreen(s, repo, TxnType.SAFE_GIVEN, 1, 0, it) }
+    @Config(qualifiers = "w360dp-h1300dp-xxhdpi") @Test fun safeReceive() = shot("30_safe_receive") { SafeFormScreen(s, repo, TxnType.SAFE_RETURNED, 1, 0, it) }
+    @Test fun safeDetail() = shot("31_safe_detail") { TxnDetailScreen(s, repo, 201, it) }
     @Test fun shortcuts() = tab("25_shortcuts", PlanRoutes.SHORTCUTS)
     @Test fun budgetsDark() = tab("20_budgets_dark", PlanRoutes.BUDGETS, dark = true)
     @Config(qualifiers = "w360dp-h1700dp-xxhdpi") @Test fun homeFullDark() = tab("01_home_full_dark", Routes.HOME, dark = true)

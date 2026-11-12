@@ -113,6 +113,12 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material3.AssistChip
 import androidx.compose.runtime.LaunchedEffect
 import com.lenzorium.expenses.notify.Notifier
+import com.lenzorium.expenses.ui.screens.SafeRoutes
+import com.lenzorium.expenses.ui.screens.SafekeepingScreen
+import com.lenzorium.expenses.ui.screens.SafePersonScreen
+import com.lenzorium.expenses.ui.screens.SafeFormScreen
+import androidx.compose.material.icons.rounded.Handshake
+import androidx.compose.material.icons.rounded.AssignmentReturned
 import com.lenzorium.expenses.ui.screens.BillsScreen
 import com.lenzorium.expenses.ui.screens.BudgetsScreen
 import com.lenzorium.expenses.ui.screens.GoalDetailScreen
@@ -146,6 +152,8 @@ object Routes {
         TxnType.LOAN_REPAYMENT -> repay(loanId ?: 0, id)
         TxnType.LOAN_CHARGE -> charge(loanId ?: 0, id)
         TxnType.TRANSFER -> transfer(id)
+        TxnType.SAFE_GIVEN -> "safe/give?person=0&id=$id"
+        TxnType.SAFE_RETURNED -> "safe/receive?person=0&id=$id"
     }
 }
 
@@ -364,6 +372,23 @@ internal fun MainShell(
             composable("txn/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
                 TxnDetailScreen(state, repo, e.arguments?.getLong("id") ?: 0L, nav)
             }
+            composable(SafeRoutes.HOME) { SafekeepingScreen(state, nav) }
+            composable("safe/person/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
+                SafePersonScreen(state, repo, e.arguments?.getLong("id") ?: 0L, nav)
+            }
+            composable(
+                "safe/{dir}?person={person}&id={id}",
+                arguments = listOf(
+                    navArgument("dir") { type = NavType.StringType },
+                    navArgument("person") { type = NavType.LongType; defaultValue = 0L },
+                    navArgument("id") { type = NavType.LongType; defaultValue = 0L },
+                ),
+            ) { e ->
+                SafeFormScreen(
+                    state, repo, if (e.arguments?.getString("dir") == "receive") TxnType.SAFE_RETURNED else TxnType.SAFE_GIVEN,
+                    e.arguments?.getLong("person") ?: 0L, e.arguments?.getLong("id") ?: 0L, nav,
+                )
+            }
             composable(Routes.PROFILE) { com.lenzorium.expenses.ui.screens.ProfileScreen(state, repo, nav) }
             composable(PlanRoutes.BUDGETS) { BudgetsScreen(state, repo, nav) }
             composable(PlanRoutes.BILLS) { BillsScreen(state, repo, nav) }
@@ -405,6 +430,8 @@ internal fun MainShell(
                 AddOption(Icons.Rounded.AccountBalance, m.loan, "Take Loan", "Money you borrowed — adds to balance and debt") { addSheet = false; nav.navigate(Routes.loanForm()) }
                 AddOption(Icons.Rounded.Payments, m.loan, "Repay Loan", "Pay back part or all of a loan") { addSheet = false; nav.navigate(Routes.repay()) }
                 AddOption(Icons.Rounded.EventRepeat, MaterialTheme.colorScheme.primary, "Bill or subscription", "Rent, utilities, Netflix: get reminded when due") { addSheet = false; nav.navigate(PlanRoutes.recurring()) }
+                AddOption(Icons.Rounded.Handshake, MaterialTheme.colorScheme.tertiary, "Give money for safekeeping", "Someone keeps your money for you. Not an expense") { addSheet = false; nav.navigate(SafeRoutes.give()) }
+                if (state.safeTotals.outstanding > 0) AddOption(Icons.Rounded.AssignmentReturned, LocalMoneyColors.current.income, "Receive money back", "Collect part or all of it. Not income") { addSheet = false; nav.navigate(SafeRoutes.receive()) }
             }
         }
     }

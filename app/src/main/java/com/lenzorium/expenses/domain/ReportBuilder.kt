@@ -83,6 +83,9 @@ data class ReportData(
     /** Accounts in another currency (kept out of the totals). */
     val foreign: Set<Long> = emptySet(),
     val accountCurrency: Map<Long, CurrencyInfo> = emptyMap(),
+    val personNames: Map<Long, String> = emptyMap(),
+    /** Money still with other people for safekeeping at the end of the period. */
+    val safeOutstandingAtEnd: Long = 0L,
     val accountNames: Map<Long, String> = emptyMap(),
 ) {
     /** "Cash", or "Bank → Cash" for a transfer. */
@@ -120,6 +123,7 @@ object ReportBuilder {
         today: LocalDate = LocalDate.now(zone),
         accounts: List<com.lenzorium.expenses.data.Account> = emptyList(),
         ledgerCurrency: String? = null,
+        holders: List<com.lenzorium.expenses.data.Holder> = emptyList(),
     ): ReportData {
         val foreign = accounts.filter { it.currency != null && ledgerCurrency != null && it.currency != ledgerCurrency }.map { it.id }.toSet()
         val start = period.start.atStartOfDay(zone).toInstant().toEpochMilli()
@@ -193,6 +197,10 @@ object ReportBuilder {
                 .filter { (a, archived) -> !archived || a.minor != 0L }
                 .map { it.first },
             accountNames = accounts.associate { it.id to it.name },
+            personNames = holders.associate { it.id to it.name },
+            safeOutstandingAtEnd = txns.sumOf { t ->
+                if (t.timestamp >= end) 0L else when (t.type) { TxnType.SAFE_GIVEN -> t.amountMinor; TxnType.SAFE_RETURNED -> -t.amountMinor; else -> 0L }
+            },
             foreign = foreign,
             accountCurrency = accounts.filter { it.id in foreign }.associate { it.id to Currencies.find(it.currency!!) },
         )

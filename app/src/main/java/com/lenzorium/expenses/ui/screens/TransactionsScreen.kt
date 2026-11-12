@@ -98,7 +98,7 @@ class TxnFilterViewModel : ViewModel() {
         val cat = t.categoryId?.let { state.categoryById[it] }
         val tq = q.removePrefix("#")
         if (t.tagList.any { it.contains(tq, ignoreCase = true) }) return true
-        return listOfNotNull(t.party, t.notes, cat?.name, loan?.lender, loan?.title, state.accountLabel(t)).any { it.contains(q, ignoreCase = true) }
+        return listOfNotNull(t.party, t.notes, cat?.name, loan?.lender, loan?.title, state.accountLabel(t), t.personId?.let { state.holderById[it]?.name }).any { it.contains(q, ignoreCase = true) }
     }
 }
 
@@ -179,7 +179,7 @@ fun TransactionsScreen(state: LedgerState, nav: NavController) {
                                 }
                             }
                             items(list, key = { it.id }) { t ->
-                                TxnRow(t, t.categoryId?.let { state.categoryById[it] }, state.currencyFor(t), toCurrency = state.currencyOf(t.toAccountId), onClick = { nav.navigate(Routes.txn(t.id)) }, account = state.accountLabel(t))
+                                TxnRow(t, t.categoryId?.let { state.categoryById[it] }, state.currencyFor(t), toCurrency = state.currencyOf(t.toAccountId), person = t.personId?.let { state.holderById[it]?.name }, onClick = { nav.navigate(Routes.txn(t.id)) }, account = state.accountLabel(t))
                             }
                         }
                     }

@@ -86,7 +86,7 @@ fun ReportsScreen(state: LedgerState, repo: Repository) {
     else Period.of(kind, LocalDate.ofEpochDay(startDay))
 
     val report = remember(period, state.txns, state.loans, state.categories, state.accounts) {
-        ReportBuilder.build(period, state.totalOpening, state.txns, state.loans, state.categories, accounts = state.accounts, ledgerCurrency = state.settings.currencyCode)
+        ReportBuilder.build(period, state.totalOpening, state.txns, state.loans, state.categories, accounts = state.accounts, ledgerCurrency = state.settings.currencyCode, holders = state.plans.holders)
     }
     fun setPeriod(p: Period) { kindName = p.kind.name; startDay = p.start.toEpochDay(); endDay = p.endInclusive.toEpochDay() }
 
@@ -151,8 +151,11 @@ fun ReportsScreen(state: LedgerState, repo: Repository) {
                         KV("− Expenses", Money.format(report.totals.expenses, c))
                         KV("− Loan repayments", Money.format(report.totals.repayments, c))
                         if (report.totals.exchangeNet != 0L) KV("± Currency exchange", Money.formatSigned(report.totals.exchangeNet, c))
+                        if (report.totals.safeGiven != 0L) KV("− Given for safekeeping", Money.format(report.totals.safeGiven, c))
+                        if (report.totals.safeReturned != 0L) KV("+ Received back", Money.format(report.totals.safeReturned, c))
                         HorizontalDivider(Modifier.padding(vertical = 6.dp))
                         KV("Closing (end of ${com.lenzorium.expenses.ui.components.Dates.short(period.endInclusive)})", Money.format(report.closingBalance, c), bold = true)
+                        if (report.safeOutstandingAtEnd != 0L) KV("Plus still with others (yours to collect)", Money.format(report.safeOutstandingAtEnd, c))
                         if (report.accountClosing.size > 1) {
                             Spacer(Modifier.height(4.dp))
                             report.accountClosing.forEach { a -> KV("   ${a.name}", Money.format(a.minor, a.currency ?: c)) }

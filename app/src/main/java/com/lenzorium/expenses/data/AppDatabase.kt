@@ -143,7 +143,25 @@ interface LedgerDao {
     @Query("DELETE FROM goal_entries WHERE id = :id") suspend fun deleteGoalEntry(id: Long)
     @Query("DELETE FROM goal_entries WHERE goalId = :goalId") suspend fun deleteGoalEntries(goalId: Long)
 
+    // Safekeeping
+    @Query("SELECT * FROM safe_people ORDER BY name COLLATE NOCASE")
+    fun observeHolders(): Flow<List<Holder>>
+    @Query("SELECT * FROM safe_people") suspend fun allHolders(): List<Holder>
+    @Query("SELECT * FROM safe_people WHERE id = :id") suspend fun holder(id: Long): Holder?
+    @Insert suspend fun insertHolder(h: Holder): Long
+    @Insert suspend fun insertHolders(h: List<Holder>)
+    @Update suspend fun updateHolder(h: Holder)
+    @Query("DELETE FROM safe_people WHERE id = :id") suspend fun deleteHolder(id: Long)
+    @Query("SELECT * FROM transactions WHERE personId = :personId") suspend fun txnsForPerson(personId: Long): List<Txn>
+    @Query("SELECT * FROM audit_log ORDER BY at DESC, id DESC")
+    fun observeAudit(): Flow<List<AuditEntry>>
+    @Query("SELECT * FROM audit_log") suspend fun allAudit(): List<AuditEntry>
+    @Insert suspend fun insertAudit(a: AuditEntry): Long
+    @Insert suspend fun insertAuditList(a: List<AuditEntry>)
+
     // Restore helpers
+    @Query("DELETE FROM safe_people") suspend fun clearHolders()
+    @Query("DELETE FROM audit_log") suspend fun clearAudit()
     @Query("DELETE FROM budgets") suspend fun clearBudgets()
     @Query("DELETE FROM recurring") suspend fun clearRecurring()
     @Query("DELETE FROM templates") suspend fun clearTemplates()
@@ -158,8 +176,9 @@ interface LedgerDao {
 @Database(entities = [
         Txn::class, Loan::class, Category::class, Account::class,
         Budget::class, Recurring::class, Template::class, Goal::class, GoalEntry::class,
+        Holder::class, AuditEntry::class,
     ],
-    version = 3, exportSchema = true)
+    version = 4, exportSchema = true)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): LedgerDao
@@ -228,9 +247,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Version 4 adds money given for safekeeping: people, an audit trail and two entry columns. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `personId` INTEGER")
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `dueEpochDay` INTEGER")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `safe_people` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, " +
+                        "`phone` TEXT NOT NULL, `notes` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `audit_log` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `txnId` INTEGER, `personId` INTEGER, " +
+                        "`action` TEXT NOT NULL, `details` TEXT NOT NULL, `at` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_audit_log_personId` ON `audit_log` (`personId`)")
+            }
+        }
+
         fun create(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "lenzorium.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }

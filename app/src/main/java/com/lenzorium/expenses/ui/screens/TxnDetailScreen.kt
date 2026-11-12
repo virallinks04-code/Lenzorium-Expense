@@ -68,6 +68,7 @@ fun TxnDetailScreen(state: LedgerState, repo: Repository, id: Long, nav: NavCont
     val scope = rememberCoroutineScope()
     val messenger = com.lenzorium.expenses.ui.LocalMessenger.current
     var confirmDelete by remember { mutableStateOf(false) }
+    var pinOk by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showReceipt by remember { mutableStateOf(false) }
 
@@ -77,7 +78,7 @@ fun TxnDetailScreen(state: LedgerState, repo: Repository, id: Long, nav: NavCont
                 IconBadge(txnIcon(t, cat), if (t.type.isLoanRelated) txnColor(t.type) else cat?.let { Color(it.colorArgb) } ?: txnColor(t.type), size = 52)
                 Spacer(Modifier.width(14.dp))
                 Column {
-                    Text(txnTitle(t, cat), style = MaterialTheme.typography.titleLarge)
+                    Text(txnTitle(t, cat, t.personId?.let { state.holderById[it]?.name }), style = MaterialTheme.typography.titleLarge)
                     Text(txnAmountText(t, state.currencyFor(t), state.currencyOf(t.toAccountId)), style = MaterialTheme.typography.headlineMedium, color = txnColor(t.type))
                 }
             }
@@ -90,6 +91,15 @@ fun TxnDetailScreen(state: LedgerState, repo: Repository, id: Long, nav: NavCont
                         TxnType.EXPENSE -> Field("Merchant or place", t.party.ifBlank { "—" })
                         TxnType.INCOME -> Field("Source", t.party.ifBlank { "—" })
                         TxnType.TRANSFER -> Unit
+                        TxnType.SAFE_GIVEN, TxnType.SAFE_RETURNED -> {
+                            val h = t.personId?.let { state.holderById[it] }
+                            Field("Person", (h?.name ?: "—") + (h?.phone?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""))
+                            if (t.party.isNotBlank()) Field("Purpose", t.party)
+                            t.dueEpochDay?.let { Field("Expected back by", Dates.epochDay(it)) }
+                            t.personId?.let { pid -> state.safeSummaries.firstOrNull { it.holder.id == pid } }?.let { sm ->
+                                Field("Still with ${sm.holder.name}", Money.format(sm.remaining, c) + " of " + Money.format(sm.given, c) + " given")
+                            }
+                        }
                         else -> Field("Lender", t.party)
                     }
                     when (t.type) {
@@ -97,12 +107,14 @@ fun TxnDetailScreen(state: LedgerState, repo: Repository, id: Long, nav: NavCont
                             Field("From", state.accountName(t.accountId) ?: "—")
                             Field("To", state.accountName(t.toAccountId) ?: "—")
                         }
-                        TxnType.EXPENSE, TxnType.LOAN_REPAYMENT -> Field("Paid from", state.accountName(t.accountId) ?: t.paymentMethod?.label ?: "—")
-                        TxnType.INCOME, TxnType.LOAN_RECEIVED -> Field("Received into", state.accountName(t.accountId) ?: t.paymentMethod?.label ?: "—")
+                        TxnType.EXPENSE, TxnType.LOAN_REPAYMENT, TxnType.SAFE_GIVEN -> Field(if (t.type == TxnType.SAFE_GIVEN) "Given from" else "Paid from", state.accountName(t.accountId) ?: t.paymentMethod?.label ?: "—")
+                        TxnType.INCOME, TxnType.LOAN_RECEIVED, TxnType.SAFE_RETURNED -> Field("Received into", state.accountName(t.accountId) ?: t.paymentMethod?.label ?: "—")
                         TxnType.LOAN_CHARGE -> Unit
                     }
                     when (t.type) {
                         TxnType.LOAN_CHARGE -> Field("Effect", "Adds to the loan's debt. Available balance is not changed.")
+                        TxnType.SAFE_GIVEN -> Field("Effect", "Leaves your ${state.accountName(t.accountId) ?: "account"} balance (${Money.formatSigned(-t.amountMinor, c)}). Not an expense: it's still your money, recorded as owed back to you.")
+                        TxnType.SAFE_RETURNED -> Field("Effect", "Back in your ${state.accountName(t.accountId) ?: "account"} balance (${Money.formatSigned(t.amountMinor, c)}). Not income: it's your own money returning.")
                         TxnType.TRANSFER -> LedgerMath.cashDelta(t, state.foreignIds).let { d ->
                             if (d == 0L) Field("Effect", "Moves money between your accounts. Your total balance doesn't change.")
                             else Field("Effect", "Currency exchange: your ${c.code} total changes by ${Money.formatSigned(d, c)}. It isn't income or an expense.")
@@ -163,12 +175,14 @@ fun TxnDetailScreen(state: LedgerState, repo: Repository, id: Long, nav: NavCont
         }
     }
 
-    if (confirmDelete) {
+    if (confirmDelete && t.type.isSafekeeping && !pinOk) {
+        PinGate(repo.settings, "Deleting safekeeping records needs your PIN.", onOk = { pinOk = true }, onCancel = { confirmDelete = false })
+    } else if (confirmDelete) {
         val after = state.available - LedgerMath.cashDelta(t, state.foreignIds)
         val warn = if (after < 0 && LedgerMath.cashDelta(t, state.foreignIds) > 0) "\n\nYour available balance will become ${Money.format(after, c)}." else ""
         ConfirmDialog(
             title = "Delete this ${t.type.label.lowercase()}?",
-            message = "${txnTitle(t, cat)} · ${Money.format(t.amountMinor, c)}. This can't be undone.$warn",
+            message = "${txnTitle(t, cat, t.personId?.let { state.holderById[it]?.name })} · ${Money.format(t.amountMinor, c)}. This can't be undone.$warn",
             confirmLabel = "Delete",
             destructive = true,
             onConfirm = {

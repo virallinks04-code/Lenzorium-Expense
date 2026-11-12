@@ -234,6 +234,24 @@ fun HomeScreen(state: LedgerState, nav: NavController, repo: com.lenzorium.expen
                             }
                         }
                     }
+                    if (state.safeTotals.outstanding > 0) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            Modifier
+                                .padding(end = 12.dp)
+                                .fillMaxWidth()
+                                .background(Color.White.copy(alpha = 0.10f), MaterialTheme.shapes.medium)
+                                .clickable { nav.navigate(SafeRoutes.HOME) }
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("With others for safekeeping", style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f))
+                                Text(shown(state.safeTotals.outstanding) + " · yours to collect", style = MaterialTheme.typography.titleSmall, color = m.onHero, maxLines = 1)
+                            }
+                            Text("${state.safeTotals.peopleHolding} ${if (state.safeTotals.peopleHolding == 1) "person" else "people"}", style = MaterialTheme.typography.labelMedium, color = m.onHero.copy(alpha = 0.8f))
+                        }
+                    }
                 }
             }
         }
@@ -490,7 +508,7 @@ fun HomeScreen(state: LedgerState, nav: NavController, repo: com.lenzorium.expen
                 SectionCard {
                     Column(Modifier.padding(vertical = 4.dp)) {
                         recent.forEach { t ->
-                            TxnRow(t, t.categoryId?.let { state.categoryById[it] }, state.currencyFor(t), toCurrency = state.currencyOf(t.toAccountId), onClick = { nav.navigate(Routes.txn(t.id)) }, showDate = true, account = state.accountLabel(t))
+                            TxnRow(t, t.categoryId?.let { state.categoryById[it] }, state.currencyFor(t), toCurrency = state.currencyOf(t.toAccountId), person = t.personId?.let { state.holderById[it]?.name }, onClick = { nav.navigate(Routes.txn(t.id)) }, showDate = true, account = state.accountLabel(t))
                         }
                     }
                 }

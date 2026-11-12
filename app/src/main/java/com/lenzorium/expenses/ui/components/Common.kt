@@ -136,6 +136,8 @@ object CategoryIcons {
 }
 
 fun txnIcon(t: Txn, cat: Category?): ImageVector = when (t.type) {
+    TxnType.SAFE_GIVEN -> Icons.Rounded.Handshake
+    TxnType.SAFE_RETURNED -> Icons.Rounded.AssignmentReturned
     TxnType.EXPENSE, TxnType.INCOME -> cat?.let { CategoryIcons.of(it.iconKey) } ?: Icons.Rounded.Category
     TxnType.LOAN_RECEIVED -> Icons.Rounded.AccountBalance
     TxnType.LOAN_REPAYMENT -> Icons.Rounded.Payments
@@ -143,7 +145,9 @@ fun txnIcon(t: Txn, cat: Category?): ImageVector = when (t.type) {
     TxnType.TRANSFER -> Icons.Rounded.SwapHoriz
 }
 
-fun txnTitle(t: Txn, cat: Category?): String = when (t.type) {
+fun txnTitle(t: Txn, cat: Category?, person: String? = null): String = when (t.type) {
+    TxnType.SAFE_GIVEN -> "Given to ${person ?: "someone"} to keep"
+    TxnType.SAFE_RETURNED -> "Received back from ${person ?: "someone"}"
     TxnType.EXPENSE, TxnType.INCOME -> t.party.ifBlank { cat?.name ?: t.type.label }
     TxnType.LOAN_RECEIVED -> "Loan from ${t.party}"
     TxnType.LOAN_REPAYMENT -> "Repaid to ${t.party}"
@@ -158,6 +162,7 @@ fun txnColor(type: TxnType): Color {
         TxnType.EXPENSE -> m.expense
         TxnType.INCOME -> m.income
         TxnType.TRANSFER -> MaterialTheme.colorScheme.primary
+        TxnType.SAFE_GIVEN, TxnType.SAFE_RETURNED -> MaterialTheme.colorScheme.tertiary
         else -> m.loan
     }
 }
@@ -188,10 +193,11 @@ fun IconBadge(icon: ImageVector, tint: Color, modifier: Modifier = Modifier, siz
 }
 
 @Composable
-fun TxnRow(t: Txn, cat: Category?, currency: CurrencyInfo, onClick: () -> Unit, showDate: Boolean = false, account: String? = null, toCurrency: CurrencyInfo? = null) {
+fun TxnRow(t: Txn, cat: Category?, currency: CurrencyInfo, onClick: () -> Unit, showDate: Boolean = false, account: String? = null, toCurrency: CurrencyInfo? = null, person: String? = null) {
     val tint = when (t.type) {
         TxnType.EXPENSE, TxnType.INCOME -> cat?.let { Color(it.colorArgb) } ?: txnColor(t.type)
         TxnType.TRANSFER -> MaterialTheme.colorScheme.primary
+        TxnType.SAFE_GIVEN, TxnType.SAFE_RETURNED -> MaterialTheme.colorScheme.tertiary
         else -> LocalMoneyColors.current.loan
     }
     Row(
@@ -204,9 +210,9 @@ fun TxnRow(t: Txn, cat: Category?, currency: CurrencyInfo, onClick: () -> Unit, 
         IconBadge(txnIcon(t, cat), tint)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(txnTitle(t, cat), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(txnTitle(t, cat, person), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val parts = buildList {
-                if (t.type != TxnType.TRANSFER) add(if (t.type.isLoanRelated) t.type.label else cat?.name ?: t.type.label)
+                if (t.type != TxnType.TRANSFER) add(if (t.type.isLoanRelated || t.type.isSafekeeping) (if (t.type.isSafekeeping) "Safekeeping" else t.type.label) else cat?.name ?: t.type.label)
                 (account ?: t.paymentMethod?.label)?.let { add(it) }
                 add(if (showDate) Dates.date(t.timestamp) else Dates.time(t.timestamp))
             }

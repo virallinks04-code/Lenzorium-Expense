@@ -5,6 +5,7 @@ import androidx.room.withTransaction
 import com.lenzorium.expenses.domain.LedgerMath
 import com.lenzorium.expenses.domain.Money
 import com.lenzorium.expenses.domain.PlanMath
+import com.lenzorium.expenses.domain.SafeMath
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -41,6 +42,8 @@ class Repository(
     val templates = dao.observeTemplates()
     val goals = dao.observeGoals()
     val goalEntries = dao.observeGoalEntries()
+    val holders = dao.observeHolders()
+    val audit = dao.observeAudit()
 
     val receiptsDir: File get() = File(context.filesDir, "receipts").apply { mkdirs() }
     fun receiptFile(name: String): File = File(receiptsDir, name)
@@ -266,6 +269,11 @@ class Repository(
                         }
                     }
                 }
+                if (t.type.isSafekeeping) {
+                    val related = t.personId?.let { dao.txnsForPerson(it) } ?: emptyList()
+                    SafeMath.check(related, t, null, ::fmt)?.let { return@withTransaction SaveResult.Error(it) }
+                    audit(t.id, t.personId, "DELETED", describeSafe(t))
+                }
                 dao.deleteTxn(t)
                 SaveResult.Ok(id)
             }
@@ -290,7 +298,16 @@ class Repository(
 
     /** Undo for [deleteTxn]: puts the exact record back (same id and receipt). */
     suspend fun restoreTxn(t: Txn) = withContext(Dispatchers.IO) {
-        db.withTransaction { if (dao.txn(t.id) == null) dao.insertTxn(t) }
+        db.withTransaction {
+            if (dao.txn(t.id) == null) {
+                if (t.type.isSafekeeping) {
+                    val related = t.personId?.let { dao.txnsForPerson(it) } ?: emptyList()
+                    if (SafeMath.check(related, null, t, ::fmt) != null) return@withTransaction
+                    audit(t.id, t.personId, "RESTORED", describeSafe(t))
+                }
+                dao.insertTxn(t)
+            }
+        }
     }
 
     /** Everything needed to undo a loan deletion. */
@@ -410,6 +427,112 @@ class Repository(
         dao.allTxns().none { it.timestamp < ms }
     }
 
+    // ---------- Money given for safekeeping ----------
+
+    private suspend fun audit(txnId: Long?, personId: Long?, action: String, details: String) {
+        dao.insertAudit(AuditEntry(txnId = txnId, personId = personId, action = action, details = details, at = System.currentTimeMillis()))
+    }
+
+    private suspend fun describeSafe(t: Txn): String {
+        val who = t.personId?.let { dao.holder(it)?.name } ?: "?"
+        val acc = t.accountId?.let { dao.account(it)?.name } ?: "?"
+        val date = java.time.Instant.ofEpochMilli(t.timestamp).atZone(ZoneId.systemDefault()).toLocalDate()
+        return if (t.type == TxnType.SAFE_GIVEN) "Gave ${fmt(t.amountMinor)} to $who from $acc on $date" + (t.party.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "")
+        else "Received ${fmt(t.amountMinor)} back from $who into $acc on $date"
+    }
+
+    private suspend fun diffSafe(a: Txn, b: Txn): String {
+        val parts = mutableListOf<String>()
+        if (a.amountMinor != b.amountMinor) parts += "amount ${fmt(a.amountMinor)} → ${fmt(b.amountMinor)}"
+        val zone = ZoneId.systemDefault()
+        fun d(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+        if (d(a.timestamp) != d(b.timestamp)) parts += "date ${d(a.timestamp)} → ${d(b.timestamp)}"
+        if (a.accountId != b.accountId) parts += "account ${a.accountId?.let { dao.account(it)?.name }} → ${b.accountId?.let { dao.account(it)?.name }}"
+        if (a.personId != b.personId) parts += "person ${a.personId?.let { dao.holder(it)?.name }} → ${b.personId?.let { dao.holder(it)?.name }}"
+        if (a.party != b.party) parts += "purpose \"${a.party}\" → \"${b.party}\""
+        if (a.dueEpochDay != b.dueEpochDay) parts += "expected return ${a.dueEpochDay?.let(LocalDate::ofEpochDay) ?: "none"} → ${b.dueEpochDay?.let(LocalDate::ofEpochDay) ?: "none"}"
+        if (a.notes != b.notes) parts += "notes changed"
+        if (a.receiptFile != b.receiptFile) parts += if (b.receiptFile == null) "attachment removed" else "attachment changed"
+        return if (parts.isEmpty()) "No changes" else "Edited: " + parts.joinToString("; ")
+    }
+
+    suspend fun holderById(id: Long): Holder? = withContext(Dispatchers.IO) { dao.holder(id) }
+
+    /** Adds or updates a person. Names must be unique (ignoring case). */
+    suspend fun saveHolder(h: Holder): SaveResult = withContext(Dispatchers.IO) {
+        val name = h.name.trim().replace(Regex("\\s+"), " ")
+        if (name.isEmpty()) return@withContext SaveResult.Error("Enter the person's name.")
+        val phone = h.phone.trim()
+        if (phone.isNotEmpty() && phone.count { it.isDigit() } < 7) return@withContext SaveResult.Error("That contact number looks too short.")
+        if (dao.allHolders().any { it.id != h.id && it.name.equals(name, ignoreCase = true) })
+            return@withContext SaveResult.Error("\"$name\" is already in your list. Choose them instead, or use a different name.")
+        val fixed = h.copy(name = name, phone = phone, notes = h.notes.trim())
+        db.withTransaction {
+            if (fixed.id == 0L) SaveResult.Ok(dao.insertHolder(fixed))
+            else {
+                val old = dao.holder(fixed.id) ?: return@withTransaction SaveResult.Error("This person no longer exists.")
+                dao.updateHolder(fixed.copy(createdAt = old.createdAt))
+                if (old.name != fixed.name || old.phone != fixed.phone)
+                    audit(null, fixed.id, "PERSON_EDITED", "Details changed: " + listOfNotNull(
+                        if (old.name != fixed.name) "name ${old.name} → ${fixed.name}" else null,
+                        if (old.phone != fixed.phone) "phone ${old.phone.ifBlank { "none" }} → ${fixed.phone.ifBlank { "none" }}" else null,
+                    ).joinToString("; "))
+                SaveResult.Ok(fixed.id)
+            }
+        }
+    }
+
+    /** Removes a person who has no entries (delete their entries first). */
+    suspend fun deleteHolder(id: Long): SaveResult = withContext(Dispatchers.IO) {
+        db.withTransaction {
+            val h = dao.holder(id) ?: return@withTransaction SaveResult.Ok(id)
+            if (dao.txnsForPerson(id).isNotEmpty()) return@withTransaction SaveResult.Error("${h.name} still has entries. Delete those first, or keep the person for your records.")
+            dao.deleteHolder(id)
+            audit(null, id, "PERSON_DELETED", "Removed ${h.name}")
+            SaveResult.Ok(id)
+        }
+    }
+
+    /**
+     * Saves money given for safekeeping or received back. Moves money out of / into the chosen account,
+     * never counts as an expense or income, and never lets recoveries exceed what was given.
+     */
+    suspend fun saveSafe(txn: Txn, oldReceiptToDelete: String? = null): SaveResult = withContext(Dispatchers.IO) {
+        if (!txn.type.isSafekeeping) return@withContext SaveResult.Error("Not a safekeeping entry.")
+        val pid = txn.personId ?: return@withContext SaveResult.Error("Choose the person.")
+        if (txn.amountMinor <= 0) return@withContext SaveResult.Error("Enter an amount greater than zero.")
+        checkDate(txn.timestamp)?.let { return@withContext SaveResult.Error(it) }
+        try {
+            db.withTransaction {
+                dao.holder(pid) ?: return@withTransaction SaveResult.Error("That person no longer exists.")
+                val old = if (txn.id != 0L) dao.txn(txn.id) ?: return@withTransaction SaveResult.Error("This entry no longer exists.") else null
+                if (old == null || old.accountId != txn.accountId)
+                    checkAccount(txn.accountId, if (txn.type == TxnType.SAFE_GIVEN) "where the money came from" else "where the money was received", ledgerOnly = true)
+                        ?.let { return@withTransaction SaveResult.Error(it) }
+                if (txn.type == TxnType.SAFE_GIVEN && txn.dueEpochDay != null) {
+                    val day = java.time.Instant.ofEpochMilli(txn.timestamp).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay()
+                    if (txn.dueEpochDay < day) return@withTransaction SaveResult.Error("The expected return date is before the date given.")
+                }
+                val related = (dao.txnsForPerson(pid) + (old?.personId?.takeIf { it != pid }?.let { dao.txnsForPerson(it) } ?: emptyList())).distinctBy { it.id }
+                SafeMath.check(related, old, txn, ::fmt)?.let { return@withTransaction SaveResult.Error(it) }
+                val clean = txn.copy(party = txn.party.trim(), notes = txn.notes.trim(), categoryId = null, loanId = null, toAccountId = null, toAmountMinor = null,
+                    dueEpochDay = if (txn.type == TxnType.SAFE_GIVEN) txn.dueEpochDay else null)
+                val id = if (old == null) {
+                    val existing = dao.txnByRequest(clean.requestId)
+                    existing?.id ?: dao.insertTxn(clean).also { audit(it, pid, "CREATED", describeSafe(clean)) }
+                } else {
+                    dao.updateTxn(clean)
+                    audit(clean.id, pid, "EDITED", diffSafe(old, clean))
+                    clean.id
+                }
+                oldReceiptToDelete?.let { receiptFile(it).delete() }
+                SaveResult.Ok(id)
+            }
+        } catch (e: Exception) {
+            SaveResult.Error("Couldn't save: ${e.message ?: "unknown error"}")
+        }
+    }
+
     // ---------- Starting over ----------
 
     /**
@@ -418,7 +541,7 @@ class Repository(
      */
     suspend fun clearEntries() = withContext(Dispatchers.IO) {
         db.withTransaction {
-            dao.clearTxns(); dao.clearLoans(); dao.clearGoalEntries()
+            dao.clearTxns(); dao.clearLoans(); dao.clearGoalEntries(); dao.clearAudit()
             val today = LocalDate.now().toEpochDay()
             dao.allRecurring().filter { it.active && it.nextDueEpochDay < today }.forEach { r ->
                 dao.updateRecurring(r.copy(nextDueEpochDay = PlanMath.nextAfter(r, today - 1) ?: r.nextDueEpochDay))
@@ -432,7 +555,7 @@ class Repository(
         db.withTransaction {
             dao.clearTxns(); dao.clearLoans(); dao.clearGoalEntries(); dao.clearGoals()
             dao.clearBudgets(); dao.clearRecurring(); dao.clearTemplates()
-            dao.clearCategories(); dao.clearAccounts()
+            dao.clearCategories(); dao.clearAccounts(); dao.clearHolders(); dao.clearAudit()
         }
         File(context.filesDir, "receipts").deleteRecursively()
         context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }

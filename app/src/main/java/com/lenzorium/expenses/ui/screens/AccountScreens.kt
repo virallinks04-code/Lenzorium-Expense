@@ -480,7 +480,7 @@ fun AccountDetailScreen(state: LedgerState, repo: Repository, accountId: Long, n
                     SectionCard {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             entries.forEach { t ->
-                                TxnRow(t, t.categoryId?.let { state.categoryById[it] }, state.currencyFor(t), toCurrency = state.currencyOf(t.toAccountId), onClick = { nav.navigate(Routes.txn(t.id)) }, showDate = true, account = state.accountLabel(t))
+                                TxnRow(t, t.categoryId?.let { state.categoryById[it] }, state.currencyFor(t), toCurrency = state.currencyOf(t.toAccountId), person = t.personId?.let { state.holderById[it]?.name }, onClick = { nav.navigate(Routes.txn(t.id)) }, showDate = true, account = state.accountLabel(t))
                             }
                         }
                     }
